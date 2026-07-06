@@ -1,0 +1,9 @@
+[project]
+name = "pytpcc-setup"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "mysqlclient>=2.2.8",
+]
