@@ -1,70 +1,55 @@
-# py-tpcc-python3
+# TPC-C Benchmark — LLM-Generated Query Optimization
 
-A Python 3 compatible fork of the original [`apavlo/py-tpcc`](https://github.com/apavlo/py-tpcc) TPC-C benchmark implementation.
+This project evaluates whether LLM-generated query rewrites (via DeepSeek V4 Flash) can produce **correct and faster** SQL for TPC-C analytic queries compared to a handwritten baseline. It extends the original [`apavlo/py-tpcc`](https://github.com/apavlo/py-tpcc) TPC-C implementation with:
 
-This fork modernizes the original project by porting it to Python 3 and adding native MySQL support while preserving the original TPC-C workload implementation.
+- Two MySQL drivers: `baselinemysql` (baseline queries) and `deepseekv4flashmysql` (LLM-rewritten queries)
+- 10 analytic queries appended to the standard TPC-C workload
+- Side-by-side benchmark comparison (throughput, latency, per-query timing)
+- Correctness verification against the same database
 
-## Features
+## Project Structure
 
-- Python 3 compatibility
-- MySQL driver
-- Original TPC-C benchmark workload
-- Data loading and benchmark execution
+| Path | Purpose |
+|------|---------|
+| `tpcc.py` | Main entry point for standard TPC-C execution |
+| `drivers/baselinemysqldriver.py` | Baseline MySQL driver (handwritten queries) |
+| `drivers/deepseekv4flashmysqldriver.py` | Optimized MySQL driver (LLM-rewritten queries) |
+| `scripts/benchmark_compare.py` | Side-by-side benchmark comparison |
+| `scripts/correctness_check.py` | Analytic query output verification |
+| `configs/` | Configuration files |
+| `tpcc.mysql.sql` | Database schema |
 
-## Changes from the Original
+## Setup
 
-- Ported the codebase from Python 2 to Python 3
-- Added a MySQL driver
-- Updated dependencies for modern Python environments
-- Fixed Python 3 compatibility issues and miscellaneous bugs
-
-## Credits
-
-This project is based on the original `py-tpcc` implementation by Andy Pavlo and contributors. This fork aims to modernize the project while remaining faithful to the original benchmark implementation.
-
-## Quick Start
-
-Assuming that you already have MySQL installed on you local machine, you can test this benchmark using the following commands.
-
-Step 1: Dump out the system's configuration to a file and then make any changes you need to that file (e.g., passwords, hostname).
-
-```
+```bash
 python tpcc.py --print-config mysql > mysql.config
+# edit mysql.config with your MySQL credentials
 ```
 
-Step 2: Then execute tpcc.py again to insert the TPC-C tables and data into the database and then execute the transactional workload:
+## Usage
 
-```
-python tpcc.py --config=mysql.config <database> load
-```
+### 1. Quick Test (Single Driver)
 
-Make any changes you need to 'mysql.config' (e.g., passwords, hostnames). 
-Then test the loader:
+```bash
+# Load data
+python tpcc.py --config=mysql.config tpcc load
 
-```
-python ./tpcc.py --no-execute --config=mysql.config mysql
-``` 
-
-You can use the CSV driver if you want to see what the data or transaction 
-input parameters will look like. The following command will dump out just the 
-input to the driver's functions to files in /tmp/tpcc-*
-
-```
-python ./tpcc.py csv
+# Run benchmark (no execution)
+python tpcc.py --no-execute --config=mysql.config tpcc
 ```
 
-## Benchmark Comparison
+### 2. Benchmark Comparison
 
-Compare the baseline (`baselinemysql`) and optimized (`deepseekv4flashmysql`) drivers side-by-side.
+Compare the baseline and LLM-optimized drivers side-by-side:
 
-Each driver reads the section matching its name from the config file — same as `tpcc.py`.
-
-```
-# one config file with [baselinemysql] and [deepseekv4flashmysql] sections
+```bash
+# Single config with both sections
 python scripts/benchmark_compare.py --config=tpcc.cfg --duration=60 --clients=4 --warehouses=4
 
-# separate config files per driver
-python scripts/benchmark_compare.py --config=baselinemysql.config --config2=deepseekv4flashmysql.config
+# Separate configs
+python scripts/benchmark_compare.py --config=configs/baselinemysql.config \
+    --config2=configs/deepseekv4flashmysql.config \
+    --duration=60 --clients=4 --warehouses=4
 ```
 
 Arguments:
@@ -80,13 +65,13 @@ Arguments:
 | `--stop-on-error` | false | Stop on transaction errors |
 | `--output` | none | Output JSON file for results |
 
-The script loads fresh data for each driver, runs the TPC-C workload, then prints a throughput and latency comparison table.
+Output includes: TPC-C throughput (tps, tpmC), per-transaction average latency, and per-query analytic latency in milliseconds.
 
-## Correctness Check
+### 3. Correctness Check
 
-Verify that `baselinemysql` and `deepseekv4flashmysql` analytic queries (Q1–Q10) produce identical outputs against the same database.
+Verify both drivers produce identical results for each analytic query against the same database. Logs the full SQL, row count, and result data for developer inspection.
 
-```
+```bash
 python scripts/correctness_check.py --config=configs/baselinemysql.config --warehouses=1
 ```
 
@@ -95,6 +80,57 @@ Arguments:
 | Flag | Default | Description |
 |------|---------|-------------|
 | `--config` | (required) | Config file (uses `[baselinemysql]` then `[mysql]` fallback) |
-| `--warehouses` | 1 | Number of warehouses |
+| `--warehouses` | 1 | Number of warehouses (use >1 for richer analytic query results) |
 | `--scalefactor` | 1 | Scale factor |
-``` 
+
+### 4. Standard TPC-C (Single Driver)
+
+```bash
+# Load and execute
+python tpcc.py --config=mysql.config tpcc load execute
+
+# Customize
+python tpcc.py --config=mysql.config --duration=120 --clients=8 --warehouses=10 tpcc load execute
+
+# CSV driver (dump input data without a database)
+python tpcc.py csv
+```
+
+## Config Files
+
+Each config file supports driver-specific sections with fallback to `[mysql]`:
+
+```ini
+[mysql]
+host = localhost
+port = 3306
+user = root
+password = your_password
+database = tpcc
+
+[baselinemysql]
+host = localhost
+port = 3306
+user = root
+password = your_password
+database = tpcc-baseline
+
+[deepseekv4flashmysql]
+host = localhost
+port = 3306
+user = root
+password = your_password
+database = tpcc-deepseek
+```
+
+## Extending
+
+To add a new driver:
+1. Create `drivers/yourdriver.py` with a class that extends `AbstractDriver`
+2. Append 10 analytic queries as `ANALYTIC_QUERIES` with `doAnalyticsQuery()`
+3. Add a config section to your config file
+4. Reference it in `scripts/benchmark_compare.py`
+
+## Credits
+
+Based on the original `py-tpcc` by Andy Pavlo and contributors. Extended for LLM-generated query optimization benchmarking.
