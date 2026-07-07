@@ -212,7 +212,7 @@ def main():
     print("%-25s %15.2f %15.2f %+9.1f%%" % ("tpmC", base_tpmc, opt_tpmc, pct))
 
     print()
-    print("--- Avg Latency per Transaction ---")
+    print("--- Avg Latency per Transaction (ms) ---")
     all_txns = set(list(baseline['counters'].keys()) + list(optimized['counters'].keys()))
     for txn in sorted(all_txns):
         base_cnt = baseline['counters'].get(txn, 0)
