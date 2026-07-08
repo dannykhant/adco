@@ -1,504 +1,383 @@
-# Queries: Baseline vs Optimized by DeepseekV4Flash
+# Queries: Baseline vs Optimized
+
+## How to read this
+
+Each transaction section shows:
+- **Baseline**: the set of SQL queries the application issues (fragmented from an app POV)
+- **Optimized**: the rewritten SQL with fewer round-trips
+- **Rationale**: which fragmentations were merged and why
+
+The metric that matters: **number of database round-trips per transaction call**.
 
 ---
+
 # TPC-C Transaction Queries
 
 ## DELIVERY
 
-### Baseline (2 queries per district)
+### Application flow
+
+Loop over 10 districts. Per district:
+1. `SELECT NO_O_ID FROM NEW_ORDER` → get a pending order
+2. `SELECT O_C_ID FROM ORDERS` → find the customer who placed it
+3. `SELECT SUM(OL_AMOUNT) FROM ORDER_LINE` → total value
+4. `DELETE FROM NEW_ORDER` → remove from queue
+5. `UPDATE ORDERS SET O_CARRIER_ID` → mark delivered
+6. `UPDATE ORDER_LINE SET OL_DELIVERY_D` → set delivery timestamp
+7. `UPDATE CUSTOMER SET C_BALANCE` → add the amount to balance
+
+**Fragmentation**: 10 districts × 7 queries = **70 round-trips** per call.
+
+### Baseline (per district, 7 queries)
+
 ```sql
--- Step 1: get new order id
 SELECT NO_O_ID FROM NEW_ORDER
-WHERE NO_D_ID = %s AND NO_W_ID = %s AND NO_O_ID > -1 LIMIT 1
+WHERE NO_D_ID = %s AND NO_W_ID = %s AND NO_O_ID > -1 LIMIT 1;
 
--- Step 2: get customer id (separate query)
-SELECT O_C_ID FROM ORDERS WHERE O_ID = %s AND O_D_ID = %s AND O_W_ID = %s
+SELECT O_C_ID FROM ORDERS
+WHERE O_ID = %s AND O_D_ID = %s AND O_W_ID = %s;
+
+SELECT SUM(OL_AMOUNT) FROM ORDER_LINE
+WHERE OL_O_ID = %s AND OL_D_ID = %s AND OL_W_ID = %s;
+
+DELETE FROM NEW_ORDER WHERE NO_D_ID = %s AND NO_W_ID = %s AND NO_O_ID = %s;
+
+UPDATE ORDERS SET O_CARRIER_ID = %s
+WHERE O_ID = %s AND O_D_ID = %s AND O_W_ID = %s;
+
+UPDATE ORDER_LINE SET OL_DELIVERY_D = %s
+WHERE OL_O_ID = %s AND OL_D_ID = %s AND OL_W_ID = %s;
+
+UPDATE CUSTOMER SET C_BALANCE = C_BALANCE + %s
+WHERE C_ID = %s AND C_D_ID = %s AND C_W_ID = %s;
 ```
 
-### Optimized — merged into 1 query
-```sql
-SELECT NO_O_ID, O_C_ID FROM NEW_ORDER
-INNER JOIN ORDERS ON O_ID = NO_O_ID AND O_D_ID = NO_D_ID AND O_W_ID = NO_W_ID
-WHERE NO_D_ID = %s AND NO_W_ID = %s LIMIT 1
-```
+### Optimized (1 batch + 1 SELECT + 4 writes per district = **~26-51 round-trips**)
 
-### Shared queries (identical)
-```sql
-DELETE FROM NEW_ORDER WHERE NO_D_ID = %s AND NO_W_ID = %s AND NO_O_ID = %s
+**Optimization 1** — Fetch one pending order per district using `GROUP BY NO_D_ID` with `MIN(NO_O_ID)`, joined to ORDERS for customer ID. Returns at most 10 rows (one per district).
 
-UPDATE ORDERS SET O_CARRIER_ID = %s WHERE O_ID = %s AND O_D_ID = %s AND O_W_ID = %s
-
-UPDATE ORDER_LINE SET OL_DELIVERY_D = %s WHERE OL_O_ID = %s AND OL_D_ID = %s AND OL_W_ID = %s
-
-SELECT SUM(OL_AMOUNT) FROM ORDER_LINE WHERE OL_O_ID = %s AND OL_D_ID = %s AND OL_W_ID = %s
-
-UPDATE CUSTOMER SET C_BALANCE = C_BALANCE + %s WHERE C_ID = %s AND C_D_ID = %s AND C_W_ID = %s
-```
-
-## NEW_ORDER
-
-### Baseline — per-row item/stock fetching
-```sql
--- item lookup (per row)
-SELECT I_PRICE, I_NAME, I_DATA FROM ITEM WHERE I_ID = %s
-
--- stock lookup (per row, with formatted district column)
-SELECT S_QUANTITY, S_DATA, S_YTD, S_ORDER_CNT, S_REMOTE_CNT, S_DIST_%02d
-FROM STOCK WHERE S_I_ID = %s AND S_W_ID = %s
-```
-
-### Optimized — batched item/stock fetching
-```sql
--- item lookup (batched via IN)
-SELECT I_ID, I_PRICE, I_NAME, I_DATA FROM ITEM WHERE I_ID IN (%s)
-
--- stock lookup (batched via tuple IN)
-SELECT S_I_ID, S_W_ID, S_QUANTITY, S_DATA, S_YTD, S_ORDER_CNT, S_REMOTE_CNT, S_DIST_%02d
-FROM STOCK WHERE (S_I_ID, S_W_ID) IN (%s)
-```
-
-### Shared queries (identical)
-```sql
-SELECT W_TAX FROM WAREHOUSE WHERE W_ID = %s
-
-SELECT D_TAX, D_NEXT_O_ID FROM DISTRICT WHERE D_ID = %s AND D_W_ID = %s
-
-UPDATE DISTRICT SET D_NEXT_O_ID = %s WHERE D_ID = %s AND D_W_ID = %s
-
-SELECT C_DISCOUNT, C_LAST, C_CREDIT FROM CUSTOMER WHERE C_W_ID = %s AND C_D_ID = %s AND C_ID = %s
-
-INSERT INTO ORDERS (O_ID, O_D_ID, O_W_ID, O_C_ID, O_ENTRY_D, O_CARRIER_ID, O_OL_CNT, O_ALL_LOCAL)
-VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-
-INSERT INTO NEW_ORDER (NO_O_ID, NO_D_ID, NO_W_ID) VALUES (%s, %s, %s)
-
-INSERT INTO ORDER_LINE (OL_O_ID, OL_D_ID, OL_W_ID, OL_NUMBER, OL_I_ID, OL_SUPPLY_W_ID,
-                        OL_DELIVERY_D, OL_QUANTITY, OL_AMOUNT, OL_DIST_INFO)
-VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-```
-
-## ORDER_STATUS (identical)
+The `SUM(OL_AMOUNT)` is NOT inlined — it stays as a separate query per order because a correlated subquery would run for every row (including irrelevant ones) and can't be limited.
 
 ```sql
-SELECT C_ID, C_FIRST, C_MIDDLE, C_LAST, C_BALANCE
-FROM CUSTOMER WHERE C_W_ID = %s AND C_D_ID = %s AND C_ID = %s
-
-SELECT C_ID, C_FIRST, C_MIDDLE, C_LAST, C_BALANCE
-FROM CUSTOMER WHERE C_W_ID = %s AND C_D_ID = %s AND C_LAST = %s ORDER BY C_FIRST
-
-SELECT O_ID, O_CARRIER_ID, O_ENTRY_D
-FROM ORDERS WHERE O_W_ID = %s AND O_D_ID = %s AND O_C_ID = %s ORDER BY O_ID DESC LIMIT 1
-
-SELECT OL_SUPPLY_W_ID, OL_I_ID, OL_QUANTITY, OL_AMOUNT, OL_DELIVERY_D
-FROM ORDER_LINE WHERE OL_W_ID = %s AND OL_D_ID = %s AND OL_O_ID = %s
+SELECT n.NO_D_ID, n.NO_O_ID, o.O_C_ID
+FROM (SELECT NO_D_ID, MIN(NO_O_ID) AS NO_O_ID
+      FROM NEW_ORDER
+      WHERE NO_W_ID = %s AND NO_O_ID > -1
+      GROUP BY NO_D_ID) n
+JOIN ORDERS o ON o.O_ID = n.NO_O_ID
+             AND o.O_D_ID = n.NO_D_ID
+             AND o.O_W_ID = %s;
 ```
 
-## PAYMENT (identical)
+Then per result row (1 SELECT + 4 writes):
 
 ```sql
-SELECT W_NAME, W_STREET_1, W_STREET_2, W_CITY, W_STATE, W_ZIP
-FROM WAREHOUSE WHERE W_ID = %s
+SELECT SUM(OL_AMOUNT) FROM ORDER_LINE
+WHERE OL_O_ID = %s AND OL_D_ID = %s AND OL_W_ID = %s;
 
-UPDATE WAREHOUSE SET W_YTD = W_YTD + %s WHERE W_ID = %s
+DELETE FROM NEW_ORDER WHERE NO_D_ID = %s AND NO_W_ID = %s AND NO_O_ID = %s;
 
-SELECT D_NAME, D_STREET_1, D_STREET_2, D_CITY, D_STATE, D_ZIP
-FROM DISTRICT WHERE D_W_ID = %s AND D_ID = %s
+UPDATE ORDERS SET O_CARRIER_ID = %s
+WHERE O_ID = %s AND O_D_ID = %s AND O_W_ID = %s;
 
-UPDATE DISTRICT SET D_YTD = D_YTD + %s WHERE D_W_ID = %s AND D_ID = %s
+UPDATE ORDER_LINE SET OL_DELIVERY_D = %s
+WHERE OL_O_ID = %s AND OL_D_ID = %s AND OL_W_ID = %s;
 
-SELECT C_ID, C_FIRST, C_MIDDLE, C_LAST, C_STREET_1, C_STREET_2, C_CITY, C_STATE, C_ZIP,
-       C_PHONE, C_SINCE, C_CREDIT, C_CREDIT_LIM, C_DISCOUNT, C_BALANCE, C_YTD_PAYMENT,
-       C_PAYMENT_CNT, C_DATA
-FROM CUSTOMER WHERE C_W_ID = %s AND C_D_ID = %s AND C_ID = %s
-
-SELECT C_ID, C_FIRST, C_MIDDLE, C_LAST, C_STREET_1, C_STREET_2, C_CITY, C_STATE, C_ZIP,
-       C_PHONE, C_SINCE, C_CREDIT, C_CREDIT_LIM, C_DISCOUNT, C_BALANCE, C_YTD_PAYMENT,
-       C_PAYMENT_CNT, C_DATA
-FROM CUSTOMER WHERE C_W_ID = %s AND C_D_ID = %s AND C_LAST = %s ORDER BY C_FIRST
-
-UPDATE CUSTOMER SET C_BALANCE = %s, C_YTD_PAYMENT = %s, C_PAYMENT_CNT = %s, C_DATA = %s
-WHERE C_W_ID = %s AND C_D_ID = %s AND C_ID = %s
-
-UPDATE CUSTOMER SET C_BALANCE = %s, C_YTD_PAYMENT = %s, C_PAYMENT_CNT = %s
-WHERE C_W_ID = %s AND C_D_ID = %s AND C_ID = %s
-
-INSERT INTO HISTORY VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+UPDATE CUSTOMER SET C_BALANCE = C_BALANCE + %s
+WHERE C_ID = %s AND C_D_ID = %s AND C_W_ID = %s;
 ```
 
-## STOCK_LEVEL
+| | Baseline | Optimized |
+|---|---|---|
+| District loop queries | 10 × 7 = 70 | 1 + N × 5 |
+| Typical (5-10 districts have orders) | 70 | **~26-51** |
 
-### Baseline — old-style comma JOIN
-```sql
-SELECT COUNT(DISTINCT(OL_I_ID))
-FROM ORDER_LINE, STOCK
-WHERE OL_W_ID = %s
-  AND OL_D_ID = %s
-  AND OL_O_ID < %s
-  AND OL_O_ID >= %s
-  AND S_W_ID = %s
-  AND S_I_ID = OL_I_ID
-  AND S_QUANTITY < %s
-```
-
-### Optimized — modern EXISTS subquery
-```sql
-SELECT COUNT(DISTINCT(OL_I_ID))
-FROM ORDER_LINE
-WHERE OL_W_ID = %s
-  AND OL_D_ID = %s
-  AND OL_O_ID < %s
-  AND OL_O_ID >= %s
-  AND EXISTS (
-    SELECT 1 FROM STOCK
-    WHERE S_W_ID = %s
-      AND S_I_ID = OL_I_ID
-      AND S_QUANTITY < %s
-  )
-```
+`ponytail:` sumOLAmount stays separate — a correlated subquery in the batch would execute for every row returned by the GROUP BY subquery (still max 10, so not the problem), but the real issue was the original attempt used no GROUP BY/LIMIT, returning thousands of rows × the subquery = catastrophic. The writes per district are vectorizable but not worth the complexity for max 10 rows.
 
 ---
 
-# Analytic Queries: Baseline vs Optimized
+## NEW_ORDER
 
-## Q1 — Customer Order History (last 20 orders)
+### Application flow
 
-### Baseline
+1. For each item (N = 5-15): `SELECT I_PRICE, I_NAME, I_DATA FROM ITEM` **← per-item loop #1**
+2. `SELECT W_TAX FROM WAREHOUSE`
+3. `SELECT D_TAX, D_NEXT_O_ID FROM DISTRICT`
+4. `SELECT C_DISCOUNT, C_LAST, C_CREDIT FROM CUSTOMER`
+5. `UPDATE DISTRICT SET D_NEXT_O_ID`
+6. `INSERT INTO ORDERS`
+7. `INSERT INTO NEW_ORDER`
+8. For each item: `SELECT S_QUANTITY, ... FROM STOCK` **← per-item loop #2**
+9. For each item: `UPDATE STOCK SET ...`
+10. For each item: `INSERT INTO ORDER_LINE`
+
+**Fragmentation**: Two per-item SELECT loops (N queries each), three independent SELECTs (warehouse, district, customer), and three per-item write loops.
+
+### Baseline (N items, N = 5-15)
+
 ```sql
-SELECT o.o_id, o.o_entry_d, o.o_carrier_id,
-       COUNT(ol.ol_number) AS item_count,
-       SUM(ol.ol_amount) AS total_amount
-FROM ORDERS o
-JOIN ORDER_LINE ol
-    ON o.o_w_id = ol.ol_w_id
-   AND o.o_d_id = ol.ol_d_id
-   AND o.o_id = ol.ol_o_id
-WHERE o.o_w_id = %s
-  AND o.o_d_id = %s
-  AND o.o_c_id = %s
-GROUP BY o.o_id, o.o_entry_d, o.o_carrier_id
-ORDER BY o.o_entry_d DESC
-LIMIT 20
+-- Per-item loop #1: N queries
+SELECT I_PRICE, I_NAME, I_DATA FROM ITEM WHERE I_ID = %s;
+
+-- Independent SELECTs: 3 queries
+SELECT W_TAX FROM WAREHOUSE WHERE W_ID = %s;
+SELECT D_TAX, D_NEXT_O_ID FROM DISTRICT WHERE D_ID = %s AND D_W_ID = %s;
+SELECT C_DISCOUNT, C_LAST, C_CREDIT FROM CUSTOMER WHERE C_W_ID = %s AND C_D_ID = %s AND C_ID = %s;
+
+-- 3 writes
+UPDATE DISTRICT SET D_NEXT_O_ID = %s WHERE D_ID = %s AND D_W_ID = %s;
+INSERT INTO ORDERS (...) VALUES (...);
+INSERT INTO NEW_ORDER (...) VALUES (...);
+
+-- Per-item loop #2: N queries
+SELECT S_QUANTITY, S_DATA, S_YTD, S_ORDER_CNT, S_REMOTE_CNT, S_DIST_%02d
+FROM STOCK WHERE S_I_ID = %s AND S_W_ID = %s;
+
+-- Per-item loop #3: N writes
+UPDATE STOCK SET S_QUANTITY = %s, ... WHERE S_I_ID = %s AND S_W_ID = %s;
+
+-- Per-item loop #4: N writes
+INSERT INTO ORDER_LINE (...) VALUES (...);
 ```
 
-### Optimized (same as baseline)
+**Total**: 3 + 2N SELECTs + 3 + 2N writes = **6 + 4N round-trips** (26-66 for N=5-15).
+
+### Optimized (3 SELECTs + 3 writes + 2 batch ops = **8 round-trips**)
+
+**Optimization 1** — Batch all ITEM lookups into one `IN` query.
+**Optimization 2** — Batch all STOCK lookups into one `(S_I_ID, S_W_ID) IN (...)` query.
+**Optimization 3** — Merge independent SELECTs (warehouse, district, customer) via a single multi-table query.
+**Optimization 4** — Batch STOCK updates using `CASE` expression (single UPDATE with conditional branches).
+**Optimization 5** — Batch ORDER_LINE inserts using multi-row `VALUES`.
+
 ```sql
-SELECT o.o_id, o.o_entry_d, o.o_carrier_id,
-       COUNT(ol.ol_number) AS item_count,
-       SUM(ol.ol_amount) AS total_amount
-FROM ORDERS o
-JOIN ORDER_LINE ol
-    ON o.o_w_id = ol.ol_w_id
-   AND o.o_d_id = ol.ol_d_id
-   AND o.o_id = ol.ol_o_id
-WHERE o.o_w_id = %s
-  AND o.o_d_id = %s
-  AND o.o_c_id = %s
-GROUP BY o.o_id, o.o_entry_d, o.o_carrier_id
-ORDER BY o.o_entry_d DESC
-LIMIT 20
-```
+-- Batch item lookup: 1 query instead of N
+SELECT I_ID, I_PRICE, I_NAME, I_DATA FROM ITEM
+WHERE I_ID IN (%s, %s, ..., %s);
 
-## Q2 — Customer Spending Summary (top 50)
-
-### Baseline
-```sql
-SELECT c.c_id, c.c_first, c.c_last,
-       COUNT(DISTINCT o.o_id) AS total_orders,
-       SUM(ol.ol_amount) AS total_spent
-FROM CUSTOMER c
-JOIN ORDERS o
-    ON c.c_w_id = o.o_w_id
-   AND c.c_d_id = o.o_d_id
-   AND c.c_id = o.o_c_id
-JOIN ORDER_LINE ol
-    ON o.o_w_id = ol.ol_w_id
-   AND o.o_d_id = ol.ol_d_id
-   AND o.o_id = ol.ol_o_id
-WHERE c.c_w_id = %s
-GROUP BY c.c_id, c.c_first, c.c_last
-ORDER BY total_spent DESC
-LIMIT 50
-```
-
-### Optimized — pre-aggregate ORDER_LINE before join
-```sql
-SELECT c.c_id, c.c_first, c.c_last,
-       COUNT(*) AS total_orders,
-       SUM(t.order_total) AS total_spent
-FROM CUSTOMER c
-JOIN ORDERS o
-    ON c.c_w_id = o.o_w_id AND c.c_d_id = o.o_d_id AND c.c_id = o.o_c_id
-JOIN (
-    SELECT ol_w_id, ol_d_id, ol_o_id, SUM(ol_amount) AS order_total
-    FROM ORDER_LINE
-    GROUP BY ol_w_id, ol_d_id, ol_o_id
-) t ON t.ol_w_id = o.o_w_id AND t.ol_d_id = o.o_d_id AND t.ol_o_id = o.o_id
-WHERE c.c_w_id = %s
-GROUP BY c.c_id, c.c_first, c.c_last
-ORDER BY total_spent DESC
-LIMIT 50
-```
-
-## Q3 — Top-Selling Items
-
-### Baseline
-```sql
-SELECT i.i_id, i.i_name,
-       COUNT(*) AS order_count,
-       SUM(ol.ol_quantity) AS total_quantity,
-       SUM(ol.ol_amount) AS revenue
-FROM ITEM i
-JOIN ORDER_LINE ol
-    ON i.i_id = ol.ol_i_id
-GROUP BY i.i_id, i.i_name
-HAVING COUNT(*) > %s
-ORDER BY revenue DESC
-LIMIT 100
-```
-
-### Optimized — pre-aggregate ORDER_LINE, then join ITEM
-```sql
-SELECT i.i_id, i.i_name,
-       t.order_count, t.total_quantity, t.revenue
-FROM (
-    SELECT ol_i_id,
-           COUNT(*) AS order_count,
-           SUM(ol_quantity) AS total_quantity,
-           SUM(ol_amount) AS revenue
-    FROM ORDER_LINE
-    GROUP BY ol_i_id
-    HAVING COUNT(*) > %s
-    ORDER BY revenue DESC
-    LIMIT 100
-) t
-JOIN ITEM i ON i.i_id = t.ol_i_id
-ORDER BY t.revenue DESC
-```
-
-## Q4 — Warehouse Revenue
-
-### Baseline — joins through WAREHOUSE → DISTRICT → ORDERS → ORDER_LINE
-```sql
-SELECT w.w_id,
-       COUNT(DISTINCT o.o_id) AS total_orders,
-       SUM(ol.ol_amount) AS revenue
+-- Merge independent SELECTs: 1 query instead of 3
+SELECT w.W_TAX, d.D_TAX, d.D_NEXT_O_ID, c.C_DISCOUNT, c.C_LAST, c.C_CREDIT
 FROM WAREHOUSE w
-JOIN DISTRICT d ON w.w_id = d.d_w_id
-JOIN ORDERS o ON d.d_w_id = o.o_w_id AND d.d_id = o.o_d_id
-JOIN ORDER_LINE ol
-    ON o.o_w_id = ol.ol_w_id
-   AND o.o_d_id = ol.ol_d_id
-   AND o.o_id = ol.ol_o_id
-GROUP BY w.w_id
-ORDER BY revenue DESC
+JOIN DISTRICT d ON d.D_W_ID = w.W_ID AND d.D_ID = %s
+JOIN CUSTOMER c ON c.C_W_ID = w.W_ID AND c.C_D_ID = %s AND c.C_ID = %s
+WHERE w.W_ID = %s;
+
+-- 3 writes
+UPDATE DISTRICT SET D_NEXT_O_ID = %s WHERE D_ID = %s AND D_W_ID = %s;
+INSERT INTO ORDERS (...) VALUES (...);
+INSERT INTO NEW_ORDER (...) VALUES (...);
+
+-- Batch stock lookup: 1 query instead of N
+SELECT S_I_ID, S_W_ID, S_QUANTITY, S_DATA, S_YTD, S_ORDER_CNT, S_REMOTE_CNT, S_DIST_%02d
+FROM STOCK WHERE (S_I_ID, S_W_ID) IN ((%s,%s), (%s,%s), ...);
+
+-- Batch stock update: 1 query instead of N
+UPDATE STOCK SET
+  S_QUANTITY = CASE
+    WHEN (S_I_ID, S_W_ID) = (%s,%s) THEN %s
+    ...
+    ELSE S_QUANTITY
+  END,
+  S_YTD = CASE ... END,
+  S_ORDER_CNT = CASE ... END,
+  S_REMOTE_CNT = CASE ... END
+WHERE (S_I_ID = %s AND S_W_ID = %s) OR ...;
+
+-- Batch order line insert: 1 query instead of N
+INSERT INTO ORDER_LINE (...) VALUES
+  (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s),
+  (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s),
+  ...;
 ```
 
-### Optimized — direct GROUP BY on ORDER_LINE.ol_w_id (eliminates 3 joins)
-```sql
-SELECT ol_w_id AS w_id,
-       COUNT(DISTINCT ol_o_id) AS total_orders,
-       SUM(ol_amount) AS revenue
-FROM ORDER_LINE
-GROUP BY ol_w_id
-ORDER BY revenue DESC
-```
+| | Baseline | Optimized |
+|---|---|---|
+| SELECT round-trips | 3 + 2N | 1 + 1 + 1 = 3 |
+| Write round-trips | 3 + 2N | 3 + 1 + 1 = 5 |
+| **Total** | **6 + 4N** | **8** (constant, regardless of N) |
 
-## Q5 — Customers With No Orders
+---
+
+## ORDER_STATUS
+
+### Application flow (by-c_id path)
+
+1. `SELECT C_ID, C_FIRST, ... FROM CUSTOMER` → customer info
+2. `SELECT O_ID, O_CARRIER_ID, O_ENTRY_D FROM ORDERS` → last order
+3. `SELECT OL_SUPPLY_W_ID, ... FROM ORDER_LINE` → order lines (conditional)
+
+**Fragmentation**: Queries 1 and 2 operate on the same `(w_id, d_id, c_id)` key but hit different tables. They could be merged via `LEFT JOIN`.
 
 ### Baseline
+
 ```sql
-SELECT c.c_w_id, c.c_d_id, c.c_id, c.c_first, c.c_last
+-- Query 1
+SELECT C_ID, C_FIRST, C_MIDDLE, C_LAST, C_BALANCE
+FROM CUSTOMER WHERE C_W_ID = %s AND C_D_ID = %s AND C_ID = %s;
+
+-- Query 2
+SELECT O_ID, O_CARRIER_ID, O_ENTRY_D
+FROM ORDERS WHERE O_W_ID = %s AND O_D_ID = %s AND O_C_ID = %s
+ORDER BY O_ID DESC LIMIT 1;
+
+-- Query 3 (conditional on query 2 having a result)
+SELECT OL_SUPPLY_W_ID, OL_I_ID, OL_QUANTITY, OL_AMOUNT, OL_DELIVERY_D
+FROM ORDER_LINE WHERE OL_W_ID = %s AND OL_D_ID = %s AND OL_O_ID = %s;
+```
+
+### Optimized
+
+**Optimization** — Merge customer lookup + last order into one `LEFT JOIN` (customer exists even if no orders).
+
+```sql
+-- Merged query 1+2: 1 query instead of 2
+SELECT c.C_ID, c.C_FIRST, c.C_MIDDLE, c.C_LAST, c.C_BALANCE,
+       o.O_ID, o.O_CARRIER_ID, o.O_ENTRY_D
 FROM CUSTOMER c
-WHERE NOT EXISTS (
-    SELECT 1
-    FROM ORDERS o
-    WHERE o.o_w_id = c.c_w_id
-      AND o.o_d_id = c.c_d_id
-      AND o.o_c_id = c.c_id
-)
+LEFT JOIN ORDERS o
+  ON o.O_W_ID = c.C_W_ID AND o.O_D_ID = c.C_D_ID AND o.O_C_ID = c.C_ID
+WHERE c.C_W_ID = %s AND c.C_D_ID = %s AND c.C_ID = %s
+ORDER BY o.O_ID DESC LIMIT 1;
+
+-- Query 3 (conditional — only if O_ID IS NOT NULL)
+SELECT OL_SUPPLY_W_ID, OL_I_ID, OL_QUANTITY, OL_AMOUNT, OL_DELIVERY_D
+FROM ORDER_LINE WHERE OL_W_ID = %s AND OL_D_ID = %s AND OL_O_ID = %s;
 ```
 
-### Optimized (same as baseline)
-```sql
-SELECT c.c_w_id, c.c_d_id, c.c_id, c.c_first, c.c_last
-FROM CUSTOMER c
-WHERE NOT EXISTS (
-    SELECT 1 FROM ORDERS o
-    WHERE o.o_w_id = c.c_w_id AND o.o_d_id = c.c_d_id AND o.o_c_id = c.c_id
-)
-```
+| | Baseline | Optimized |
+|---|---|---|
+| c_id path | 2-3 queries | **1-2 queries** |
 
-## Q6 — Average Order Value per District
+`ponytail:` The by-c_last path can't merge because we need the median customer's `c_id` before we can query their last order. Not worth restructuring for one path.
+
+---
+
+## PAYMENT
+
+### Application flow
+
+1. `SELECT C_ID, C_FIRST, ... FROM CUSTOMER` → find customer (by id or last name)
+2. `SELECT W_NAME, ... FROM WAREHOUSE` → warehouse info
+3. `SELECT D_NAME, ... FROM DISTRICT` → district info
+4. `UPDATE WAREHOUSE SET W_YTD` → update warehouse YTD
+5. `UPDATE DISTRICT SET D_YTD` → update district YTD
+6. `UPDATE CUSTOMER SET C_BALANCE, ...` → update customer balance
+7. `INSERT INTO HISTORY` → record the payment
+
+**Fragmentation**: Queries 2 and 3 are independent SELECTs that can be merged (they share `w_id` and `d_id`).
 
 ### Baseline
+
 ```sql
-SELECT t.o_w_id, t.o_d_id, AVG(t.order_total) AS avg_order_value
-FROM (
-    SELECT o.o_w_id, o.o_d_id, o.o_id, SUM(ol.ol_amount) AS order_total
-    FROM ORDERS o
-    JOIN ORDER_LINE ol
-        ON o.o_w_id = ol.ol_w_id
-       AND o.o_d_id = ol.ol_d_id
-       AND o.o_id = ol.ol_o_id
-    GROUP BY o.o_w_id, o.o_d_id, o.o_id
-) t
-GROUP BY t.o_w_id, t.o_d_id
-ORDER BY t.o_w_id, t.o_d_id
+-- Query 1
+SELECT C_ID, C_FIRST, ..., C_BALANCE, C_YTD_PAYMENT, C_PAYMENT_CNT, C_DATA
+FROM CUSTOMER WHERE C_W_ID = %s AND C_D_ID = %s AND C_ID = %s;
+
+-- Query 2
+SELECT W_NAME, W_STREET_1, W_STREET_2, W_CITY, W_STATE, W_ZIP
+FROM WAREHOUSE WHERE W_ID = %s;
+
+-- Query 3
+SELECT D_NAME, D_STREET_1, D_STREET_2, D_CITY, D_STATE, D_ZIP
+FROM DISTRICT WHERE D_W_ID = %s AND D_ID = %s;
+
+-- Queries 4–7 are scalar writes, keep as-is
 ```
 
-### Optimized — pre-aggregate ORDER_LINE directly (eliminates ORDERS join)
+### Optimized
+
+**Optimization** — Merge warehouse + district lookup into one `JOIN` query (they share the same `w_id` and `d_id`).
+
 ```sql
-SELECT ol_w_id, ol_d_id, AVG(order_total) AS avg_order_value
-FROM (
-    SELECT ol_w_id, ol_d_id, ol_o_id, SUM(ol_amount) AS order_total
-    FROM ORDER_LINE
-    GROUP BY ol_w_id, ol_d_id, ol_o_id
-) t
-GROUP BY ol_w_id, ol_d_id
-ORDER BY ol_w_id, ol_d_id
+-- Query 1 (unchanged — depends on c_id/c_last)
+SELECT ... FROM CUSTOMER WHERE ...;
+
+-- Merged query 2+3: 1 query instead of 2
+SELECT w.W_NAME, w.W_STREET_1, w.W_STREET_2, w.W_CITY, w.W_STATE, w.W_ZIP,
+       d.D_NAME, d.D_STREET_1, d.D_STREET_2, d.D_CITY, d.D_STATE, d.D_ZIP
+FROM WAREHOUSE w
+JOIN DISTRICT d ON d.D_W_ID = w.W_ID AND d.D_ID = %s
+WHERE w.W_ID = %s;
+
+-- Queries 4–7: writes, keep as-is
 ```
 
-## Q7 — Warehouse Inventory Value
+| | Baseline | Optimized |
+|---|---|---|
+| SELECT round-trips | 3 | **2** |
+| Total round-trips | 7 | **6** |
+
+`ponytail:` Could also merge customer lookup with warehouse+district when searching by `c_id` (known upfront), but not when searching by `c_last` (need median first). Keeping it simple.
+
+---
+
+## STOCK_LEVEL
+
+### Application flow
+
+1. `SELECT D_NEXT_O_ID FROM DISTRICT` → get the next OID
+2. `SELECT COUNT(DISTINCT(OL_I_ID)) FROM ORDER_LINE, STOCK WHERE ...` → threshold check
+
+**Fragmentation**: Query 1 is only used to compute the OID bounds for query 2. Could be inlined.
 
 ### Baseline
+
 ```sql
-SELECT s.s_w_id,
-       COUNT(*) AS total_items,
-       SUM(s.s_quantity * i.i_price) AS inventory_value
-FROM STOCK s
-JOIN ITEM i ON s.s_i_id = i.i_id
-GROUP BY s.s_w_id
-ORDER BY inventory_value DESC
+-- Query 1
+SELECT D_NEXT_O_ID FROM DISTRICT WHERE D_W_ID = %s AND D_ID = %s;
+
+-- Query 2 (old-style comma join)
+SELECT COUNT(DISTINCT(OL_I_ID))
+FROM ORDER_LINE, STOCK
+WHERE OL_W_ID = %s AND OL_D_ID = %s
+  AND OL_O_ID < %s AND OL_O_ID >= %s
+  AND S_W_ID = %s AND S_I_ID = OL_I_ID AND S_QUANTITY < %s;
 ```
 
-### Optimized (same as baseline)
+### Optimized
+
+**Optimization 1** — Merge both queries into one by inlining the `D_NEXT_O_ID` subquery.
+**Optimization 2** — Use `EXISTS` subquery instead of comma join (avoids cartesian intermediate).
+
 ```sql
-SELECT s.s_w_id,
-       COUNT(*) AS total_items,
-       SUM(s.s_quantity * i.i_price) AS inventory_value
-FROM STOCK s
-JOIN ITEM i ON s.s_i_id = i.i_id
-GROUP BY s.s_w_id
-ORDER BY inventory_value DESC
-```
-
-## Q8 — High-Value Customers (above district average)
-
-### Baseline — correlated subquery
-```sql
-SELECT cs.*
-FROM (
-    SELECT c.c_w_id, c.c_d_id, c.c_id, SUM(ol.ol_amount) AS total_spent
-    FROM CUSTOMER c
-    JOIN ORDERS o
-        ON c.c_w_id = o.o_w_id AND c.c_d_id = o.o_d_id AND c.c_id = o.o_c_id
-    JOIN ORDER_LINE ol
-        ON o.o_w_id = ol.ol_w_id AND o.o_d_id = ol.ol_d_id AND o.o_id = ol.ol_o_id
-    GROUP BY c.c_w_id, c.c_d_id, c.c_id
-) cs
-WHERE cs.total_spent > (
-    SELECT AVG(total_spent)
-    FROM (
-        SELECT c2.c_w_id, c2.c_d_id, SUM(ol2.ol_amount) AS total_spent
-        FROM CUSTOMER c2
-        JOIN ORDERS o2
-            ON c2.c_w_id = o2.o_w_id AND c2.c_d_id = o2.o_d_id AND c2.c_id = o2.o_c_id
-        JOIN ORDER_LINE ol2
-            ON o2.o_w_id = ol2.ol_w_id AND o2.o_d_id = ol2.ol_d_id AND o2.o_id = ol2.ol_o_id
-        GROUP BY c2.c_w_id, c2.c_d_id, c2.c_id
-    ) inner_cs
-    WHERE inner_cs.c_w_id = cs.c_w_id AND inner_cs.c_d_id = cs.c_d_id
-)
-ORDER BY cs.c_w_id, cs.c_d_id, cs.total_spent DESC
-```
-
-### Optimized — JOIN with derived table instead of correlated subquery
-```sql
-SELECT cs.c_w_id, cs.c_d_id, cs.c_id, cs.total_spent
-FROM (
-    SELECT c.c_w_id, c.c_d_id, c.c_id, SUM(ol.ol_amount) AS total_spent
-    FROM CUSTOMER c
-    JOIN ORDERS o
-        ON c.c_w_id = o.o_w_id AND c.c_d_id = o.o_d_id AND c.c_id = o.o_c_id
-    JOIN ORDER_LINE ol
-        ON o.o_w_id = ol.ol_w_id AND o.o_d_id = ol.ol_d_id AND o.o_id = ol.ol_o_id
-    GROUP BY c.c_w_id, c.c_d_id, c.c_id
-) cs
-JOIN (
-    SELECT c_w_id, c_d_id, AVG(total_spent) AS district_avg
-    FROM (
-        SELECT c2.c_w_id, c2.c_d_id, SUM(ol2.ol_amount) AS total_spent
-        FROM CUSTOMER c2
-        JOIN ORDERS o2
-            ON c2.c_w_id = o2.o_w_id AND c2.c_d_id = o2.o_d_id AND c2.c_id = o2.o_c_id
-        JOIN ORDER_LINE ol2
-            ON o2.o_w_id = ol2.ol_w_id AND o2.o_d_id = ol2.ol_d_id AND o2.o_id = ol2.ol_o_id
-        GROUP BY c2.c_w_id, c2.c_d_id, c2.c_id
-    ) inner_cs
-    GROUP BY c_w_id, c_d_id
-) da ON da.c_w_id = cs.c_w_id AND da.c_d_id = cs.c_d_id
-WHERE cs.total_spent > da.district_avg
-ORDER BY cs.c_w_id, cs.c_d_id, cs.total_spent DESC
-```
-
-## Q9 — Top 100 Orders by Value
-
-### Baseline — join then group then limit
-```sql
-SELECT o.o_w_id, o.o_d_id, o.o_id,
-       c.c_first, c.c_last,
-       COUNT(ol.ol_number) AS total_items,
-       SUM(ol.ol_amount) AS total_amount
-FROM ORDERS o
-JOIN CUSTOMER c
-    ON o.o_w_id = c.c_w_id AND o.o_d_id = c.c_d_id AND o.o_c_id = c.c_id
-JOIN ORDER_LINE ol
-    ON o.o_w_id = ol.ol_w_id AND o.o_d_id = ol.ol_d_id AND o.o_id = ol.ol_o_id
-GROUP BY o.o_w_id, o.o_d_id, o.o_id, c.c_first, c.c_last
-ORDER BY total_amount DESC
-LIMIT 100
-```
-
-### Optimized — pre-aggregate ORDER_LINE, limit first, then join
-```sql
-SELECT o.o_w_id, o.o_d_id, o.o_id, c.c_first, c.c_last,
-       t.total_items, t.total_amount
-FROM (
-    SELECT ol_w_id, ol_d_id, ol_o_id,
-           COUNT(*) AS total_items,
-           SUM(ol_amount) AS total_amount
-    FROM ORDER_LINE
-    GROUP BY ol_w_id, ol_d_id, ol_o_id
-    ORDER BY total_amount DESC
-    LIMIT 100
-) t
-JOIN ORDERS o ON o.o_w_id = t.ol_w_id AND o.o_d_id = t.ol_d_id AND o.o_id = t.ol_o_id
-JOIN CUSTOMER c ON c.c_w_id = o.o_w_id AND c.c_d_id = o.o_d_id AND c.c_id = o.o_c_id
-ORDER BY t.total_amount DESC
-```
-
-## Q10 — Supplier Analysis
-
-### Baseline
-```sql
-SELECT ol.ol_supply_w_id,
-       COUNT(*) AS supplied_lines,
-       COUNT(DISTINCT ol.ol_o_id) AS affected_orders,
-       SUM(ol.ol_quantity) AS total_quantity,
-       SUM(ol.ol_amount) AS total_revenue
-FROM ORDER_LINE ol
-GROUP BY ol.ol_supply_w_id
-ORDER BY total_revenue DESC
-```
-
-### Optimized (same as baseline)
-```sql
-SELECT ol_supply_w_id,
-       COUNT(*) AS supplied_lines,
-       COUNT(DISTINCT ol_o_id) AS affected_orders,
-       SUM(ol_quantity) AS total_quantity,
-       SUM(ol_amount) AS total_revenue
+-- Merged query: 1 query instead of 2, with EXISTS instead of comma join
+SELECT COUNT(DISTINCT(OL_I_ID))
 FROM ORDER_LINE
-GROUP BY ol_supply_w_id
-ORDER BY total_revenue DESC
+WHERE OL_W_ID = %s AND OL_D_ID = %s
+  AND OL_O_ID < (SELECT D_NEXT_O_ID FROM DISTRICT WHERE D_W_ID = %s AND D_ID = %s)
+  AND OL_O_ID >= (SELECT D_NEXT_O_ID - 20 FROM DISTRICT WHERE D_W_ID = %s AND D_ID = %s)
+  AND EXISTS (
+    SELECT 1 FROM STOCK
+    WHERE S_W_ID = %s AND S_I_ID = OL_I_ID AND S_QUANTITY < %s
+  );
 ```
+
+| | Baseline | Optimized |
+|---|---|---|
+| Round-trips | 2 | **1** |
+
+`ponytail:` Duplicates the DISTRICT subquery. A CTE avoids the duplication on MySQL 8+ but the simplicity loss isn't worth it for a one-off.
+
+---
+
+# Summary
+
+## Round-trip reduction (transaction queries)
+
+| Transaction | Baseline RTs | Optimized RTs | Factor |
+|---|---|---|---|
+| DELIVERY (10 districts) | 70 | ~26-51 | ~1.4-2.7× |
+| NEW_ORDER (N=10 avg) | 46 | 8 | **~6×** |
+| ORDER_STATUS (by c_id) | 3 | 2 | 1.5× |
+| PAYMENT | 7 | 6 | 1.2× |
+| STOCK_LEVEL | 2 | 1 | **2×** |
+
+## Techniques used
+
+| Technique | Applied to | Impact |
+|---|---|---|
+| Batch SELECT via IN clause | NEW_ORDER item/stock lookups | N→1 per loop |
+| Batch UPDATE via CASE | NEW_ORDER stock updates | N→1 per loop |
+| Batch INSERT via multi-row VALUES | NEW_ORDER order lines | N→1 per loop |
+| Merge consecutive SELECTs via JOIN | DELIVERY, ORDER_STATUS, PAYMENT | 2→1 |
+| Inline subquery to eliminate query | STOCK_LEVEL | 2→1 |
