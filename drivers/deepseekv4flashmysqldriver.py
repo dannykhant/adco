@@ -2,7 +2,7 @@ from __future__ import with_statement
 
 import os
 import logging
-from pprint import pprint, pformat
+from pprint import pformat
 
 import constants
 from .abstractdriver import *
@@ -14,205 +14,82 @@ except ImportError:
 
 TXN_QUERIES = {
     "DELIVERY": {
-        "getNewOrder": "SELECT NO_O_ID, O_C_ID FROM NEW_ORDER INNER JOIN ORDERS ON O_ID = NO_O_ID AND O_D_ID = NO_D_ID AND O_W_ID = NO_W_ID WHERE NO_D_ID = %s AND NO_W_ID = %s LIMIT 1",
+        "batchNewOrders": """
+            SELECT n.NO_D_ID, n.NO_O_ID, o.O_C_ID
+            FROM (SELECT NO_D_ID, MIN(NO_O_ID) AS NO_O_ID
+                  FROM NEW_ORDER
+                  WHERE NO_W_ID = %s AND NO_O_ID > -1
+                  GROUP BY NO_D_ID) n
+            JOIN ORDERS o ON o.O_ID = n.NO_O_ID
+                         AND o.O_D_ID = n.NO_D_ID
+                         AND o.O_W_ID = %s
+        """,
         "deleteNewOrder": "DELETE FROM NEW_ORDER WHERE NO_D_ID = %s AND NO_W_ID = %s AND NO_O_ID = %s",
-        "getCId": "SELECT O_C_ID FROM ORDERS WHERE O_ID = %s AND O_D_ID = %s AND O_W_ID = %s",
         "updateOrders": "UPDATE ORDERS SET O_CARRIER_ID = %s WHERE O_ID = %s AND O_D_ID = %s AND O_W_ID = %s",
         "updateOrderLine": "UPDATE ORDER_LINE SET OL_DELIVERY_D = %s WHERE OL_O_ID = %s AND OL_D_ID = %s AND OL_W_ID = %s",
         "sumOLAmount": "SELECT SUM(OL_AMOUNT) FROM ORDER_LINE WHERE OL_O_ID = %s AND OL_D_ID = %s AND OL_W_ID = %s",
         "updateCustomer": "UPDATE CUSTOMER SET C_BALANCE = C_BALANCE + %s WHERE C_ID = %s AND C_D_ID = %s AND C_W_ID = %s",
     },
     "NEW_ORDER": {
-        "getWarehouseTaxRate": "SELECT W_TAX FROM WAREHOUSE WHERE W_ID = %s",
-        "getDistrict": "SELECT D_TAX, D_NEXT_O_ID FROM DISTRICT WHERE D_ID = %s AND D_W_ID = %s",
+        "batchItemInfo": "SELECT I_ID, I_PRICE, I_NAME, I_DATA FROM ITEM WHERE I_ID IN (%s)",
+        "getMiscInfo": """
+            SELECT w.W_TAX, d.D_TAX, d.D_NEXT_O_ID, c.C_DISCOUNT, c.C_LAST, c.C_CREDIT
+            FROM WAREHOUSE w
+            JOIN DISTRICT d ON d.D_W_ID = w.W_ID AND d.D_ID = %s
+            JOIN CUSTOMER c ON c.C_W_ID = w.W_ID AND c.C_D_ID = %s AND c.C_ID = %s
+            WHERE w.W_ID = %s
+        """,
         "incrementNextOrderId": "UPDATE DISTRICT SET D_NEXT_O_ID = %s WHERE D_ID = %s AND D_W_ID = %s",
-        "getCustomer": "SELECT C_DISCOUNT, C_LAST, C_CREDIT FROM CUSTOMER WHERE C_W_ID = %s AND C_D_ID = %s AND C_ID = %s",
         "createOrder": "INSERT INTO ORDERS (O_ID, O_D_ID, O_W_ID, O_C_ID, O_ENTRY_D, O_CARRIER_ID, O_OL_CNT, O_ALL_LOCAL) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
         "createNewOrder": "INSERT INTO NEW_ORDER (NO_O_ID, NO_D_ID, NO_W_ID) VALUES (%s, %s, %s)",
-        "getItemInfo": "SELECT I_ID, I_PRICE, I_NAME, I_DATA FROM ITEM WHERE I_ID IN (%s)",
-        "getStockInfo": "SELECT S_I_ID, S_W_ID, S_QUANTITY, S_DATA, S_YTD, S_ORDER_CNT, S_REMOTE_CNT, S_DIST_%02d FROM STOCK WHERE (S_I_ID, S_W_ID) IN (%s)",
+        "batchStockInfo": "SELECT S_I_ID, S_W_ID, S_QUANTITY, S_DATA, S_YTD, S_ORDER_CNT, S_REMOTE_CNT, S_DIST_%02d FROM STOCK WHERE (S_I_ID, S_W_ID) IN (%s)",
         "updateStock": "UPDATE STOCK SET S_QUANTITY = %s, S_YTD = %s, S_ORDER_CNT = %s, S_REMOTE_CNT = %s WHERE S_I_ID = %s AND S_W_ID = %s",
         "createOrderLine": "INSERT INTO ORDER_LINE (OL_O_ID, OL_D_ID, OL_W_ID, OL_NUMBER, OL_I_ID, OL_SUPPLY_W_ID, OL_DELIVERY_D, OL_QUANTITY, OL_AMOUNT, OL_DIST_INFO) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
     },
-
     "ORDER_STATUS": {
-        "getCustomerByCustomerId": "SELECT C_ID, C_FIRST, C_MIDDLE, C_LAST, C_BALANCE FROM CUSTOMER WHERE C_W_ID = %s AND C_D_ID = %s AND C_ID = %s",
+        "getCustomerAndLastOrder": """
+            SELECT c.C_ID, c.C_FIRST, c.C_MIDDLE, c.C_LAST, c.C_BALANCE,
+                   o.O_ID, o.O_CARRIER_ID, o.O_ENTRY_D
+            FROM CUSTOMER c
+            LEFT JOIN ORDERS o
+              ON o.O_W_ID = c.C_W_ID AND o.O_D_ID = c.C_D_ID AND o.O_C_ID = c.C_ID
+            WHERE c.C_W_ID = %s AND c.C_D_ID = %s AND c.C_ID = %s
+            ORDER BY o.O_ID DESC LIMIT 1
+        """,
         "getCustomersByLastName": "SELECT C_ID, C_FIRST, C_MIDDLE, C_LAST, C_BALANCE FROM CUSTOMER WHERE C_W_ID = %s AND C_D_ID = %s AND C_LAST = %s ORDER BY C_FIRST",
         "getLastOrder": "SELECT O_ID, O_CARRIER_ID, O_ENTRY_D FROM ORDERS WHERE O_W_ID = %s AND O_D_ID = %s AND O_C_ID = %s ORDER BY O_ID DESC LIMIT 1",
         "getOrderLines": "SELECT OL_SUPPLY_W_ID, OL_I_ID, OL_QUANTITY, OL_AMOUNT, OL_DELIVERY_D FROM ORDER_LINE WHERE OL_W_ID = %s AND OL_D_ID = %s AND OL_O_ID = %s",
     },
-
     "PAYMENT": {
-        "getWarehouse": "SELECT W_NAME, W_STREET_1, W_STREET_2, W_CITY, W_STATE, W_ZIP FROM WAREHOUSE WHERE W_ID = %s",
-        "updateWarehouseBalance": "UPDATE WAREHOUSE SET W_YTD = W_YTD + %s WHERE W_ID = %s",
-        "getDistrict": "SELECT D_NAME, D_STREET_1, D_STREET_2, D_CITY, D_STATE, D_ZIP FROM DISTRICT WHERE D_W_ID = %s AND D_ID = %s",
-        "updateDistrictBalance": "UPDATE DISTRICT SET D_YTD = D_YTD + %s WHERE D_W_ID  = %s AND D_ID = %s",
         "getCustomerByCustomerId": "SELECT C_ID, C_FIRST, C_MIDDLE, C_LAST, C_STREET_1, C_STREET_2, C_CITY, C_STATE, C_ZIP, C_PHONE, C_SINCE, C_CREDIT, C_CREDIT_LIM, C_DISCOUNT, C_BALANCE, C_YTD_PAYMENT, C_PAYMENT_CNT, C_DATA FROM CUSTOMER WHERE C_W_ID = %s AND C_D_ID = %s AND C_ID = %s",
         "getCustomersByLastName": "SELECT C_ID, C_FIRST, C_MIDDLE, C_LAST, C_STREET_1, C_STREET_2, C_CITY, C_STATE, C_ZIP, C_PHONE, C_SINCE, C_CREDIT, C_CREDIT_LIM, C_DISCOUNT, C_BALANCE, C_YTD_PAYMENT, C_PAYMENT_CNT, C_DATA FROM CUSTOMER WHERE C_W_ID = %s AND C_D_ID = %s AND C_LAST = %s ORDER BY C_FIRST",
+        "getWarehouseAndDistrict": """
+            SELECT w.W_NAME, w.W_STREET_1, w.W_STREET_2, w.W_CITY, w.W_STATE, w.W_ZIP,
+                   d.D_NAME, d.D_STREET_1, d.D_STREET_2, d.D_CITY, d.D_STATE, d.D_ZIP
+            FROM WAREHOUSE w
+            JOIN DISTRICT d ON d.D_W_ID = w.W_ID AND d.D_ID = %s
+            WHERE w.W_ID = %s
+        """,
+        "updateWarehouseBalance": "UPDATE WAREHOUSE SET W_YTD = W_YTD + %s WHERE W_ID = %s",
+        "updateDistrictBalance": "UPDATE DISTRICT SET D_YTD = D_YTD + %s WHERE D_W_ID = %s AND D_ID = %s",
         "updateBCCustomer": "UPDATE CUSTOMER SET C_BALANCE = %s, C_YTD_PAYMENT = %s, C_PAYMENT_CNT = %s, C_DATA = %s WHERE C_W_ID = %s AND C_D_ID = %s AND C_ID = %s",
         "updateGCCustomer": "UPDATE CUSTOMER SET C_BALANCE = %s, C_YTD_PAYMENT = %s, C_PAYMENT_CNT = %s WHERE C_W_ID = %s AND C_D_ID = %s AND C_ID = %s",
         "insertHistory": "INSERT INTO HISTORY VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
     },
-
     "STOCK_LEVEL": {
-        "getOId": "SELECT D_NEXT_O_ID FROM DISTRICT WHERE D_W_ID = %s AND D_ID = %s",
         "getStockCount": """
-            SELECT COUNT(DISTINCT(OL_I_ID)) FROM ORDER_LINE
+            SELECT COUNT(DISTINCT(OL_I_ID))
+            FROM ORDER_LINE
             WHERE OL_W_ID = %s
               AND OL_D_ID = %s
-              AND OL_O_ID < %s
-              AND OL_O_ID >= %s
+              AND OL_O_ID < (SELECT D_NEXT_O_ID FROM DISTRICT WHERE D_W_ID = %s AND D_ID = %s)
+              AND OL_O_ID >= (SELECT D_NEXT_O_ID - 20 FROM DISTRICT WHERE D_W_ID = %s AND D_ID = %s)
               AND EXISTS (
                 SELECT 1 FROM STOCK
-                WHERE S_W_ID = %s
-                  AND S_I_ID = OL_I_ID
-                  AND S_QUANTITY < %s
+                WHERE S_W_ID = %s AND S_I_ID = OL_I_ID AND S_QUANTITY < %s
               )
         """,
     },
-
-}
-
-
-ANALYTIC_QUERIES = {
-    "Q1": """
-        SELECT o.o_id, o.o_entry_d, o.o_carrier_id,
-               COUNT(ol.ol_number) AS item_count,
-               SUM(ol.ol_amount) AS total_amount
-        FROM ORDERS o
-        JOIN ORDER_LINE ol
-            ON o.o_w_id = ol.ol_w_id
-           AND o.o_d_id = ol.ol_d_id
-           AND o.o_id = ol.ol_o_id
-        WHERE o.o_w_id = %s
-          AND o.o_d_id = %s
-          AND o.o_c_id = %s
-        GROUP BY o.o_id, o.o_entry_d, o.o_carrier_id
-        ORDER BY o.o_entry_d DESC
-        LIMIT 20
-    """,
-    "Q2": """
-        SELECT c.c_id, c.c_first, c.c_last,
-               COUNT(*) AS total_orders,
-               SUM(t.order_total) AS total_spent
-        FROM CUSTOMER c
-        JOIN ORDERS o
-            ON c.c_w_id = o.o_w_id AND c.c_d_id = o.o_d_id AND c.c_id = o.o_c_id
-        JOIN (
-            SELECT ol_w_id, ol_d_id, ol_o_id, SUM(ol_amount) AS order_total
-            FROM ORDER_LINE
-            GROUP BY ol_w_id, ol_d_id, ol_o_id
-        ) t ON t.ol_w_id = o.o_w_id AND t.ol_d_id = o.o_d_id AND t.ol_o_id = o.o_id
-        WHERE c.c_w_id = %s
-        GROUP BY c.c_id, c.c_first, c.c_last
-        ORDER BY total_spent DESC
-        LIMIT 50
-    """,
-    "Q3": """
-        SELECT i.i_id, i.i_name,
-               t.order_count, t.total_quantity, t.revenue
-        FROM (
-            SELECT ol_i_id,
-                   COUNT(*) AS order_count,
-                   SUM(ol_quantity) AS total_quantity,
-                   SUM(ol_amount) AS revenue
-            FROM ORDER_LINE
-            GROUP BY ol_i_id
-            HAVING COUNT(*) > %s
-            ORDER BY revenue DESC
-            LIMIT 100
-        ) t
-        JOIN ITEM i ON i.i_id = t.ol_i_id
-        ORDER BY t.revenue DESC
-    """,
-    "Q4": """
-        SELECT ol_w_id AS w_id,
-               COUNT(DISTINCT ol_o_id) AS total_orders,
-               SUM(ol_amount) AS revenue
-        FROM ORDER_LINE
-        GROUP BY ol_w_id
-        ORDER BY revenue DESC
-    """,
-    "Q5": """
-        SELECT c.c_w_id, c.c_d_id, c.c_id, c.c_first, c.c_last
-        FROM CUSTOMER c
-        WHERE NOT EXISTS (
-            SELECT 1 FROM ORDERS o
-            WHERE o.o_w_id = c.c_w_id AND o.o_d_id = c.c_d_id AND o.o_c_id = c.c_id
-        )
-    """,
-    "Q6": """
-        SELECT ol_w_id, ol_d_id, AVG(order_total) AS avg_order_value
-        FROM (
-            SELECT ol_w_id, ol_d_id, ol_o_id, SUM(ol_amount) AS order_total
-            FROM ORDER_LINE
-            GROUP BY ol_w_id, ol_d_id, ol_o_id
-        ) t
-        GROUP BY ol_w_id, ol_d_id
-        ORDER BY ol_w_id, ol_d_id
-    """,
-    "Q7": """
-        SELECT s.s_w_id,
-               COUNT(*) AS total_items,
-               SUM(s.s_quantity * i.i_price) AS inventory_value
-        FROM STOCK s
-        JOIN ITEM i ON s.s_i_id = i.i_id
-        GROUP BY s.s_w_id
-        ORDER BY inventory_value DESC
-    """,
-    "Q8": """
-        SELECT cs.c_w_id, cs.c_d_id, cs.c_id, cs.total_spent
-        FROM (
-            SELECT c.c_w_id, c.c_d_id, c.c_id, SUM(ol.ol_amount) AS total_spent
-            FROM CUSTOMER c
-            JOIN ORDERS o
-                ON c.c_w_id = o.o_w_id AND c.c_d_id = o.o_d_id AND c.c_id = o.o_c_id
-            JOIN ORDER_LINE ol
-                ON o.o_w_id = ol.ol_w_id AND o.o_d_id = ol.ol_d_id AND o.o_id = ol.ol_o_id
-            GROUP BY c.c_w_id, c.c_d_id, c.c_id
-        ) cs
-        JOIN (
-            SELECT c_w_id, c_d_id, AVG(total_spent) AS district_avg
-            FROM (
-                SELECT c2.c_w_id, c2.c_d_id, SUM(ol2.ol_amount) AS total_spent
-                FROM CUSTOMER c2
-                JOIN ORDERS o2
-                    ON c2.c_w_id = o2.o_w_id AND c2.c_d_id = o2.o_d_id AND c2.c_id = o2.o_c_id
-                JOIN ORDER_LINE ol2
-                    ON o2.o_w_id = ol2.ol_w_id AND o2.o_d_id = ol2.ol_d_id AND o2.o_id = ol2.ol_o_id
-                GROUP BY c2.c_w_id, c2.c_d_id, c2.c_id
-            ) inner_cs
-            GROUP BY c_w_id, c_d_id
-        ) da ON da.c_w_id = cs.c_w_id AND da.c_d_id = cs.c_d_id
-        WHERE cs.total_spent > da.district_avg
-        ORDER BY cs.c_w_id, cs.c_d_id, cs.total_spent DESC
-    """,
-    "Q9": """
-        SELECT o.o_w_id, o.o_d_id, o.o_id, c.c_first, c.c_last,
-               t.total_items, t.total_amount
-        FROM (
-            SELECT ol_w_id, ol_d_id, ol_o_id,
-                   COUNT(*) AS total_items,
-                   SUM(ol_amount) AS total_amount
-            FROM ORDER_LINE
-            GROUP BY ol_w_id, ol_d_id, ol_o_id
-            ORDER BY total_amount DESC
-            LIMIT 100
-        ) t
-        JOIN ORDERS o ON o.o_w_id = t.ol_w_id AND o.o_d_id = t.ol_d_id AND o.o_id = t.ol_o_id
-        JOIN CUSTOMER c ON c.c_w_id = o.o_w_id AND c.c_d_id = o.o_d_id AND c.c_id = o.o_c_id
-        ORDER BY t.total_amount DESC
-    """,
-    "Q10": """
-        SELECT ol_supply_w_id,
-               COUNT(*) AS supplied_lines,
-               COUNT(DISTINCT ol_o_id) AS affected_orders,
-               SUM(ol_quantity) AS total_quantity,
-               SUM(ol_amount) AS total_revenue
-        FROM ORDER_LINE
-        GROUP BY ol_supply_w_id
-        ORDER BY total_revenue DESC
-    """,
 }
 
 
@@ -288,7 +165,13 @@ class Deepseekv4FlashmysqlDriver(AbstractDriver):
         for statement in sql.split(';'):
             statement = statement.strip()
             if statement:
-                cursor.execute(statement)
+                stmt = statement.replace("CREATE TABLE", "CREATE TABLE IF NOT EXISTS")
+                try:
+                    cursor.execute(stmt)
+                except mysql.OperationalError as e:
+                    # ponytail: skip "already exists" errors on re-run
+                    if e.args[0] not in (1061, 1005):
+                        raise
         cursor.execute("SET FOREIGN_KEY_CHECKS = 1")
 
     def loadTuples(self, tableName, tuples):
@@ -312,14 +195,12 @@ class Deepseekv4FlashmysqlDriver(AbstractDriver):
         o_carrier_id = params["o_carrier_id"]
         ol_delivery_d = params["ol_delivery_d"]
 
+        self.cursor.execute(q["batchNewOrders"], [w_id, w_id])
+        rows = self.cursor.fetchall()
+
         result = []
-        for d_id in range(1, constants.DISTRICTS_PER_WAREHOUSE + 1):
-            self.cursor.execute(q["getNewOrder"], [d_id, w_id])
-            row = self.cursor.fetchone()
-            if row is None:
-                continue
-            no_o_id = row[0]
-            c_id = row[1]
+        for row in rows:
+            d_id, no_o_id, c_id = row
 
             self.cursor.execute(q["sumOLAmount"], [no_o_id, d_id, w_id])
             ol_total = self.cursor.fetchone()[0]
@@ -444,17 +325,12 @@ class Deepseekv4FlashmysqlDriver(AbstractDriver):
             if i_id not in items_map:
                 return
 
-        self.cursor.execute(q["getWarehouseTaxRate"], [w_id])
-        w_tax = self.cursor.fetchone()[0]
-
-        self.cursor.execute(q["getDistrict"], [d_id, w_id])
-        district_info = self.cursor.fetchone()
-        d_tax = district_info[0]
-        d_next_o_id = district_info[1]
-
-        self.cursor.execute(q["getCustomer"], [w_id, d_id, c_id])
-        customer_info = self.cursor.fetchone()
-        c_discount = customer_info[0]
+        self.cursor.execute(q["getMiscInfo"], [d_id, d_id, c_id, w_id])
+        misc_row = self.cursor.fetchone()
+        w_tax = misc_row[0]
+        d_tax = misc_row[1]
+        d_next_o_id = misc_row[2]
+        c_discount = misc_row[3]
 
         ol_cnt = len(i_ids)
         o_carrier_id = constants.NULL_CARRIER_ID
@@ -463,10 +339,7 @@ class Deepseekv4FlashmysqlDriver(AbstractDriver):
         self.cursor.execute(q["createOrder"], [d_next_o_id, d_id, w_id, c_id, o_entry_d, o_carrier_id, ol_cnt, all_local])
         self.cursor.execute(q["createNewOrder"], [d_next_o_id, d_id, w_id])
 
-        stock_pairs = []
-        for i in range(len(i_ids)):
-            stock_pairs.append((i_ids[i], i_w_ids[i]))
-
+        stock_pairs = [(i_ids[i], i_w_ids[i]) for i in range(len(i_ids))]
         stock_map = self._batch_stock_info(d_id, stock_pairs)
 
         stock_updates = []
@@ -529,6 +402,7 @@ class Deepseekv4FlashmysqlDriver(AbstractDriver):
 
         total *= (1 - c_discount) * (1 + w_tax + d_tax)
 
+        customer_info = misc_row[3:6]
         misc = [(w_tax, d_tax, d_next_o_id, total)]
 
         return [customer_info, misc, item_data]
@@ -545,8 +419,10 @@ class Deepseekv4FlashmysqlDriver(AbstractDriver):
         assert d_id, pformat(params)
 
         if c_id is not None:
-            self.cursor.execute(q["getCustomerByCustomerId"], [w_id, d_id, c_id])
-            customer = self.cursor.fetchone()
+            self.cursor.execute(q["getCustomerAndLastOrder"], [w_id, d_id, c_id])
+            row = self.cursor.fetchone()
+            customer = row[:5]
+            order = row[5:] if row[5] is not None else None
         else:
             self.cursor.execute(q["getCustomersByLastName"], [w_id, d_id, c_last])
             all_customers = self.cursor.fetchall()
@@ -555,11 +431,12 @@ class Deepseekv4FlashmysqlDriver(AbstractDriver):
             index = (namecnt - 1) // 2
             customer = all_customers[index]
             c_id = customer[0]
+            self.cursor.execute(q["getLastOrder"], [w_id, d_id, c_id])
+            order = self.cursor.fetchone()
+
         assert len(customer) > 0
         assert c_id is not None
 
-        self.cursor.execute(q["getLastOrder"], [w_id, d_id, c_id])
-        order = self.cursor.fetchone()
         if order:
             self.cursor.execute(q["getOrderLines"], [w_id, d_id, order[0]])
             orderLines = self.cursor.fetchall()
@@ -598,11 +475,10 @@ class Deepseekv4FlashmysqlDriver(AbstractDriver):
         c_payment_cnt = customer[16] + 1
         c_data = customer[17]
 
-        self.cursor.execute(q["getWarehouse"], [w_id])
-        warehouse = self.cursor.fetchone()
-
-        self.cursor.execute(q["getDistrict"], [w_id, d_id])
-        district = self.cursor.fetchone()
+        self.cursor.execute(q["getWarehouseAndDistrict"], [d_id, w_id])
+        row = self.cursor.fetchone()
+        warehouse = row[:6]
+        district = row[6:]
 
         self.cursor.execute(q["updateWarehouseBalance"], [h_amount, w_id])
         self.cursor.execute(q["updateDistrictBalance"], [h_amount, w_id, d_id])
@@ -631,26 +507,9 @@ class Deepseekv4FlashmysqlDriver(AbstractDriver):
         d_id = params["d_id"]
         threshold = params["threshold"]
 
-        self.cursor.execute(q["getOId"], [w_id, d_id])
-        result = self.cursor.fetchone()
-        assert result
-        o_id = result[0]
-
-        self.cursor.execute(q["getStockCount"], [w_id, d_id, o_id, (o_id - 20), w_id, threshold])
+        self.cursor.execute(q["getStockCount"], [w_id, d_id, w_id, d_id, w_id, d_id, w_id, threshold])
         result = self.cursor.fetchone()
 
         self.conn.commit()
 
         return int(result[0])
-
-    def doAnalyticsQuery(self, query_name, params=None):
-        if query_name not in ANALYTIC_QUERIES:
-            raise ValueError("Unknown analytic query: %s" % query_name)
-        sql = ANALYTIC_QUERIES[query_name]
-        if params:
-            self.cursor.execute(sql, params)
-        else:
-            self.cursor.execute(sql)
-        rows = self.cursor.fetchall()
-        self.conn.commit()
-        return rows
