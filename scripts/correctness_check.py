@@ -1,18 +1,24 @@
 #!/usr/bin/env python
 """
-TPC-C Analytic Query Correctness: baselinemysql vs deepseekv4flashmysql
+Record-and-replay transaction correctness check.
 
-Loads data once, runs each analytic query (Q1–Q10) through both drivers
-against the same database, and compares outputs.
+Loads identical data into both databases (same RNG seed), runs N
+transactions through baselinemysql recording every (txn, params, result),
+then replays the same params through deepseekv4flashmysql and compares.
 
-Logs all queries and results to stdout for developer inspection.
+Usage:
+    uv run python scripts/correctness_check.py \\
+        --config=configs/baselinemysql.config \\
+        --config2=configs/deepseekv4flashmysql.config \\
+        --warehouses=4 --transactions=500
 """
 import sys
 import os
 import logging
 import argparse
+import random as rng
+from datetime import datetime
 from copy import deepcopy
-from pprint import pformat
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -23,23 +29,10 @@ logging.basicConfig(
     stream=sys.stdout,
 )
 
-from tpcc import createDriverClass
+from tpcc import createDriverClass, startLoading
 from util import scaleparameters, rand, nurand
-from drivers.baselinemysqldriver import ANALYTIC_QUERIES as BASELINE_QUERIES
-from drivers.deepseekv4flashmysqldriver import ANALYTIC_QUERIES as DEEPSEEK_QUERIES
-
-try:
-    import MySQLdb as mysql
-except ImportError:
-    import pymysql as mysql
 
 DRIVERS = ['baselinemysql', 'deepseekv4flashmysql']
-
-ANALYTIC_PARAMS = {
-    'Q1': [1, 1, 100],
-    'Q2': [1],
-    'Q3': [100],
-}
 
 
 def parse_config(config_path, section):
@@ -61,128 +54,165 @@ def parse_config(config_path, section):
     if cparser.has_section('mysql'):
         return dict(cparser.items('mysql'))
     raise ValueError(
-        "No [%s] or [mysql] section found" % section
+        "No [%s] or [mysql] section found in '%s' (tried: %s)"
+        % (section, config_path, candidates)
     )
 
 
-def connect_driver(name, config):
-    d = createDriverClass(name)('tpcc.sql')
-    d.host = str(config["host"])
-    d.port = int(config["port"])
-    d.user = str(config["user"])
-    d.password = str(config["password"])
-    d.database = str(config["database"])
-    d.conn = mysql.connect(
-        host=d.host,
-        port=d.port,
-        user=d.user,
-        password=d.password,
-        database=d.database,
-        charset='utf8',
+def load_database(driver_name, config, scale_params):
+    driver_class = createDriverClass(driver_name)
+    driver = driver_class("tpcc.sql")
+
+    cfg = deepcopy(config)
+    cfg['reset'] = True
+    cfg['load'] = False
+    cfg['execute'] = False
+
+    driver.loadConfig(cfg)
+    logging.info("Loading data for %s..." % driver_name)
+
+    from runtime import loader
+    l = loader.Loader(driver, scale_params,
+                      range(scale_params.starting_warehouse, scale_params.ending_warehouse + 1), True)
+    driver.loadStart()
+    l.execute()
+    driver.loadFinish()
+
+    driver.conn.commit()
+    logging.info("Data loaded for %s" % driver_name)
+    return driver
+
+
+def connect_driver(driver_name, config):
+    import MySQLdb as mysql
+    driver_class = createDriverClass(driver_name)
+    driver = driver_class("tpcc.sql")
+    driver.host = str(config["host"])
+    driver.port = int(config["port"])
+    driver.user = str(config["user"])
+    driver.password = str(config["password"])
+    driver.database = str(config["database"])
+    driver.conn = mysql.connect(
+        host=driver.host, port=driver.port,
+        user=driver.user, password=driver.password,
+        database=driver.database, charset='utf8',
     )
-    d.cursor = d.conn.cursor()
-    return d
+    driver.cursor = driver.conn.cursor()
+    return driver
 
 
-def normalize(v):
-    if v is None:
-        return None
-    if isinstance(v, (list, tuple)):
-        return tuple(normalize(x) for x in v)
-    if isinstance(v, float):
-        return round(v, 2)
-    if isinstance(v, dict):
-        return {k: normalize(vk) for k, vk in v.items()}
-    return v
+def compare_values(a, b, path=""):
+    mismatches = []
+    if type(a) != type(b):
+        return [(path, a, b, "type mismatch: %s vs %s" % (type(a).__name__, type(b).__name__))]
 
-
-ANALYTIC_QUERIES = {
-    'baselinemysql': BASELINE_QUERIES,
-    'deepseekv4flashmysql': DEEPSEEK_QUERIES,
-}
+    if isinstance(a, (list, tuple)):
+        if len(a) != len(b):
+            return [(path, a, b, "length %d vs %d" % (len(a), len(b)))]
+        for i, (x, y) in enumerate(zip(a, b)):
+            mismatches.extend(compare_values(x, y, "%s[%d]" % (path, i)))
+    elif isinstance(a, dict):
+        ka, kb = set(a.keys()), set(b.keys())
+        if ka != kb:
+            return [(path, a, b, "keys differ: %s vs %s" % (ka - kb, kb - ka))]
+        for k in a:
+            mismatches.extend(compare_values(a[k], b[k], "%s.%s" % (path, k)))
+    elif isinstance(a, float):
+        if abs(a - b) > 0.001:
+            mismatches.append((path, a, b, "float diff %f" % abs(a - b)))
+    elif isinstance(a, int):
+        if a != b:
+            mismatches.append((path, a, b, "int diff %d" % (a - b)))
+    elif isinstance(a, str):
+        if a != b:
+            mismatches.append((path, a, b, "str diff"))
+    elif isinstance(a, bytes):
+        if a != b:
+            mismatches.append((path, a, b, "bytes diff"))
+    elif isinstance(a, datetime):
+        pass  # timestamps differ between record/replay, ignore
+    elif a is None and b is None:
+        pass
+    else:
+        if a != b:
+            mismatches.append((path, a, b, "diff"))
+    return mismatches
 
 
 def main():
     parser = argparse.ArgumentParser(
-        description='Check analytic query correctness: baselinemysql vs deepseekv4flashmysql')
+        description='Record-and-replay transaction correctness check')
     parser.add_argument('--config', required=True, help='Configuration file')
-    parser.add_argument('--warehouses', default=1, type=int, help='Number of warehouses')
+    parser.add_argument('--config2', default=None, help='Config for deepseek (defaults to --config)')
+    parser.add_argument('--warehouses', default=4, type=int, help='Number of warehouses')
     parser.add_argument('--scalefactor', default=1, type=float, help='Scale factor')
+    parser.add_argument('--transactions', default=500, type=int, help='Number of transactions to run')
+    parser.add_argument('--stop-on-error', action='store_true', help='Stop on first mismatch')
     args = parser.parse_args()
 
+    config2 = args.config2 or args.config
     scale_params = scaleparameters.makeWithScaleFactor(args.warehouses, args.scalefactor)
     rand.setNURand(nurand.makeForLoad())
 
-    config = parse_config(args.config, DRIVERS[0])
-    config['reset'] = True
+    # Load data into both databases (same RNG state for identical data)
+    baseline_config = parse_config(args.config, DRIVERS[0])
+    deepseek_config = parse_config(config2, DRIVERS[1])
 
-    print("Loading data via %s..." % DRIVERS[0])
-    loader_driver = createDriverClass(DRIVERS[0])('tpcc.sql')
-    loader_driver.loadConfig(deepcopy(config))
+    rng_state = rng.getstate()
 
-    from runtime import loader
-    l = loader.Loader(loader_driver, scale_params,
-                      range(scale_params.starting_warehouse, scale_params.ending_warehouse + 1), True)
-    loader_driver.loadStart()
-    l.execute()
-    loader_driver.loadFinish()
-    loader_driver.conn.close()
+    baseline = load_database(DRIVERS[0], baseline_config, scale_params)
+    baseline.conn.close()
 
-    drivers = {}
-    for name in DRIVERS:
-        drivers[name] = connect_driver(name, config)
+    rng.setstate(rng_state)
+    deepseek = load_database(DRIVERS[1], deepseek_config, scale_params)
+    deepseek.conn.close()
 
-    print("\nRunning analytic queries...")
-    print("=" * 80)
-    all_ok = True
-    total = 0
+    # Reconnect both for execution
+    baseline = connect_driver(DRIVERS[0], baseline_config)
+    deepseek = connect_driver(DRIVERS[1], deepseek_config)
+
+    # Record phase: run N transactions through baseline
+    logging.info("Recording %d transactions from baseline..." % args.transactions)
+    recorded = []
+    for i in range(args.transactions):
+        from runtime.executor import Executor
+        executor = Executor(baseline, scale_params)
+        txn, params = executor.doOne()
+        result = baseline.executeTransaction(txn, params)
+        recorded.append((txn, params, result))
+        if (i + 1) % 100 == 0:
+            baseline.conn.commit()
+    baseline.conn.commit()
+    logging.info("Recorded %d transactions" % len(recorded))
+
+    # Replay phase: replay same params through deepseek
+    logging.info("Replaying %d transactions through deepseek..." % len(recorded))
+    total = len(recorded)
     passed = 0
+    failed = 0
 
-    for qname in ['Q1', 'Q2', 'Q3', 'Q4', 'Q5', 'Q6', 'Q7', 'Q8', 'Q9', 'Q10']:
-        params = ANALYTIC_PARAMS.get(qname)
-        total += 1
-
-        print("\n" + "-" * 80)
-        for name in DRIVERS:
-            sql = ANALYTIC_QUERIES[name][qname]
-            print("[%s] %s SQL:" % (name, qname))
-            for line in sql.strip().split('\n'):
-                print("  " + line)
-            if params:
-                print("  -- params: %s" % params)
-
-        results = {}
-        errors = {}
-        for name in DRIVERS:
-            try:
-                rows = drivers[name].doAnalyticsQuery(qname, params)
-                results[name] = normalize(rows)
-                errors[name] = None
-            except Exception as ex:
-                errors[name] = ex
-                results[name] = None
-
-        for name in DRIVERS:
-            r = results[name]
-            if errors[name]:
-                print("[%s] ERROR: %s" % (name, errors[name]))
-            else:
-                print("[%s] %s rows returned:" % (name, len(r) if isinstance(r, tuple) else 1))
-                print("  " + pformat(r)[:2000])
-
-        if results[DRIVERS[0]] == results[DRIVERS[1]]:
-            passed += 1
-            print(">>> %s: PASS" % qname)
+    for i, (txn, params, expected) in enumerate(recorded):
+        actual = deepseek.executeTransaction(txn, params)
+        mismatches = compare_values(expected, actual)
+        if mismatches:
+            failed += 1
+            logging.error("MISMATCH #%d: %s" % (i + 1, txn))
+            for path, exp, act, reason in mismatches[:5]:
+                logging.error("  %s: expected=%r actual=%r (%s)" % (path, exp, act, reason))
+            if args.stop_on_error:
+                sys.exit(1)
         else:
-            all_ok = False
-            print(">>> %s: FAIL (results differ)" % qname)
+            passed += 1
+        if (i + 1) % 100 == 0:
+            deepseek.conn.commit()
+    deepseek.conn.commit()
 
-    print("=" * 80)
-    print("\nResult: %d/%d correct" % (passed, total))
-    if all_ok:
-        print("=== ALL QUERIES MATCH ===")
+    print("=" * 60)
+    print("Correctness: %d/%d passed, %d failed" % (passed, total, failed))
+    if failed == 0:
+        print("ALL TRANSACTIONS MATCH")
     else:
-        print("=== SOME QUERIES MISMATCH ===")
+        print("SOME TRANSACTIONS MISMATCH")
         sys.exit(1)
 
 
