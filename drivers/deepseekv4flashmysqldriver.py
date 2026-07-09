@@ -250,19 +250,24 @@ class Deepseekv4FlashmysqlDriver(AbstractDriver):
         order_cnt_cases = []
         remote_cnt_cases = []
         where_clauses = []
-        params = []
+        quantity_params = []
+        ytd_params = []
+        order_cnt_params = []
+        remote_cnt_params = []
+        where_params = []
 
         for s_quantity, s_ytd, s_order_cnt, s_remote_cnt, i_id, w_id in updates:
             quantity_cases.append("WHEN (S_I_ID, S_W_ID) = (%s, %s) THEN %s")
-            params.extend([i_id, w_id, s_quantity])
+            quantity_params.extend([i_id, w_id, s_quantity])
             ytd_cases.append("WHEN (S_I_ID, S_W_ID) = (%s, %s) THEN %s")
-            params.extend([i_id, w_id, s_ytd])
+            ytd_params.extend([i_id, w_id, s_ytd])
             order_cnt_cases.append("WHEN (S_I_ID, S_W_ID) = (%s, %s) THEN %s")
-            params.extend([i_id, w_id, s_order_cnt])
+            order_cnt_params.extend([i_id, w_id, s_order_cnt])
             remote_cnt_cases.append("WHEN (S_I_ID, S_W_ID) = (%s, %s) THEN %s")
-            params.extend([i_id, w_id, s_remote_cnt])
+            remote_cnt_params.extend([i_id, w_id, s_remote_cnt])
             where_clauses.append("(S_I_ID = %s AND S_W_ID = %s)")
-            params.extend([i_id, w_id])
+            where_params.extend([i_id, w_id])
+        params = quantity_params + ytd_params + order_cnt_params + remote_cnt_params + where_params
 
         sql = """UPDATE STOCK SET
             S_QUANTITY = CASE
