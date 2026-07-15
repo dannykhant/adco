@@ -151,7 +151,12 @@ class BaselinemysqlDriver(AbstractDriver):
         for statement in sql.split(';'):
             statement = statement.strip()
             if statement:
-                cursor.execute(statement)
+                stmt = statement.replace("CREATE TABLE", "CREATE TABLE IF NOT EXISTS")
+                try:
+                    cursor.execute(stmt)
+                except mysql.OperationalError as e:
+                    if e.args[0] not in (1061, 1005):
+                        raise
         cursor.execute("SET FOREIGN_KEY_CHECKS = 1")
 
     ## ----------------------------------------------
