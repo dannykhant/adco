@@ -76,7 +76,7 @@ def startLoading(driverClass, scaleParameters, args, config):
     debug = logging.getLogger().isEnabledFor(logging.DEBUG)
     
     # Split the warehouses into chunks
-    w_ids = map(lambda x: [ ], range(args['clients']))
+    w_ids = list(map(lambda x: [ ], range(args['clients'])))
     for w_id in range(scaleParameters.starting_warehouse, scaleParameters.ending_warehouse+1):
         idx = w_id % args['clients']
         w_ids[idx].append(w_id)
@@ -177,7 +177,7 @@ if __name__ == '__main__':
     aparser = argparse.ArgumentParser(description='Python implementation of the TPC-C Benchmark')
     aparser.add_argument('system', choices=getDrivers(),
                          help='Target system driver')
-    aparser.add_argument('--config', type=argparse.FileType('r'),
+    aparser.add_argument('--config', type=str,
                          help='Path to driver configuration file')
     aparser.add_argument('--reset', action='store_true',
                          help='Instruct the driver to reset the contents of the database')
@@ -224,7 +224,7 @@ if __name__ == '__main__':
     if args['config']:
         logging.debug("Loading configuration file '%s'" % args['config'])
         cparser = ConfigParser()
-        cparser.read(os.path.realpath(args['config'].name))
+        cparser.read(os.path.realpath(args['config']))
         config = dict(cparser.items(args['system']))
     else:
         logging.debug("Using default configuration for %s" % args['system'])
