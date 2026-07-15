@@ -32,7 +32,7 @@ logging.basicConfig(
 from tpcc import createDriverClass, startLoading
 from util import scaleparameters, rand, nurand
 
-DRIVERS = ['baselinemysql', 'deepseekv4flashmysql']
+DRIVERS = ['baselinemysql', 'deepseekv4flashmysql', 'deepseekv4flashmysqlv2']
 
 
 def parse_config(config_path, section):
@@ -144,6 +144,7 @@ def main():
         description='Record-and-replay transaction correctness check')
     parser.add_argument('--config', required=True, help='Configuration file')
     parser.add_argument('--config2', default=None, help='Config for deepseek (defaults to --config)')
+    parser.add_argument('--config3', default=None, help='Config for deepseekv2 (defaults to --config)')
     parser.add_argument('--warehouses', default=4, type=int, help='Number of warehouses')
     parser.add_argument('--scalefactor', default=1, type=float, help='Scale factor')
     parser.add_argument('--transactions', default=500, type=int, help='Number of transactions to run')
@@ -151,12 +152,14 @@ def main():
     args = parser.parse_args()
 
     config2 = args.config2 or args.config
+    config3 = args.config3 or args.config
     scale_params = scaleparameters.makeWithScaleFactor(args.warehouses, args.scalefactor)
     rand.setNURand(nurand.makeForLoad())
 
-    # Load data into both databases (same RNG state for identical data)
+    # Load data into all databases (same RNG state for identical data)
     baseline_config = parse_config(args.config, DRIVERS[0])
     deepseek_config = parse_config(config2, DRIVERS[1])
+    deepseekv2_config = parse_config(config3, DRIVERS[2])
 
     rng_state = rng.getstate()
 
@@ -167,9 +170,14 @@ def main():
     deepseek = load_database(DRIVERS[1], deepseek_config, scale_params)
     deepseek.conn.close()
 
-    # Reconnect both for execution
+    rng.setstate(rng_state)
+    deepseekv2 = load_database(DRIVERS[2], deepseekv2_config, scale_params)
+    deepseekv2.conn.close()
+
+    # Reconnect for execution
     baseline = connect_driver(DRIVERS[0], baseline_config)
     deepseek = connect_driver(DRIVERS[1], deepseek_config)
+    deepseekv2 = connect_driver(DRIVERS[2], deepseekv2_config)
 
     # Record phase: run N transactions through baseline
     logging.info("Recording %d transactions from baseline..." % args.transactions)
@@ -207,12 +215,41 @@ def main():
             deepseek.conn.commit()
     deepseek.conn.commit()
 
+    v1_passed, v1_total = passed, total
+
+    # Replay phase 2: replay same params through deepseekv2
+    logging.info("Replaying %d transactions through deepseekv2..." % len(recorded))
+    passed = 0
+    failed = 0
+
+    for i, (txn, params, expected) in enumerate(recorded):
+        actual = deepseekv2.executeTransaction(txn, params)
+        mismatches = compare_values(expected, actual)
+        if mismatches:
+            failed += 1
+            logging.error("MISMATCH (v2) #%d: %s" % (i + 1, txn))
+            for path, exp, act, reason in mismatches[:5]:
+                logging.error("  %s: expected=%r actual=%r (%s)" % (path, exp, act, reason))
+            if args.stop_on_error:
+                sys.exit(1)
+        else:
+            passed += 1
+        if (i + 1) % 100 == 0:
+            deepseekv2.conn.commit()
+    deepseekv2.conn.commit()
+
+    v2_passed, v2_total = passed, total
+
     print("=" * 60)
-    print("Correctness: %d/%d passed, %d failed" % (passed, total, failed))
-    if failed == 0:
-        print("ALL TRANSACTIONS MATCH")
+    print("deepseekv4flashmysql:  %d/%d passed, %d failed" % (v1_passed, v1_total, v1_total - v1_passed))
+    print("deepseekv4flashmysqlv2: %d/%d passed, %d failed" % (v2_passed, v2_total, v2_total - v2_passed))
+    if v1_failed := (v1_total - v1_passed):
+        print("deepseekv4flashmysql: SOME TRANSACTIONS MISMATCH")
+    if v2_f := (v2_total - v2_passed):
+        print("deepseekv4flashmysqlv2: SOME TRANSACTIONS MISMATCH")
+    if (v1_total - v1_passed) == 0 and (v2_total - v2_passed) == 0:
+        print("ALL DRIVERS MATCH BASELINE")
     else:
-        print("SOME TRANSACTIONS MISMATCH")
         sys.exit(1)
 
 

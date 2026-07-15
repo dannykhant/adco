@@ -10,6 +10,7 @@ MYSQL_PASSWORD="mysqlrootpassword"
 DATABASES=(
     "tpcc-baseline"
     "tpcc-deepseekv4flash"
+    "tpcc-deepseekv4flashv2"
 )
 
 for db in "${DATABASES[@]}"; do
