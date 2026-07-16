@@ -229,7 +229,12 @@ if __name__ == '__main__':
         logging.debug("Loading configuration file '%s'" % args['config'])
         cparser = ConfigParser()
         cparser.read(os.path.realpath(args['config']))
-        config = dict(cparser.items(args['system']))
+        if cparser.has_section(args['system']):
+            config = dict(cparser.items(args['system']))
+        elif cparser.has_section('candidates'):
+            config = dict(cparser.items('candidates'))
+        else:
+            config = dict(cparser.items(args['system']))
     else:
         logging.debug("Using default configuration for %s" % args['system'])
         defaultConfig = driver.makeDefaultConfig()
