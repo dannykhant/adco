@@ -8,6 +8,7 @@ MYSQL_USER="root"
 MYSQL_PASSWORD="mysql_root_password"
 
 DATABASES=(
+    "tpcc-candidates"
     "tpcc-baseline"
     "tpcc-deepseekv4flash"
     "tpcc-deepseekv4flashv2"
