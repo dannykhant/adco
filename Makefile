@@ -7,22 +7,22 @@ SHELL := /bin/bash
 run:
 	@echo "Running benchmark..."
 	uv run python tpcc/tpcc.py baselinemysql \
-		--config=tpcc/configs/baselinemysql.config \
+		--config=tpcc/configs/mysql.config \
 		--clients=1
 	uv run python tpcc/tpcc.py deepseekv4flashmysql \
-		--config=tpcc/configs/deepseekv4flashmysql.config \
+		--config=tpcc/configs/mysql.config \
 		--clients=1
 	uv run python tpcc/tpcc.py deepseekv4flashmysqlv2 \
-		--config=tpcc/configs/deepseekv4flashmysqlv2.config \
+		--config=tpcc/configs/mysql.config \
 		--clients=1
 	@echo "Benchmark completed."
 
 test:
 	@echo "Running tests..."
 	uv run python tpcc/scripts/correctness_check.py \
-		--config=configs/baselinemysql.config \
-		--config2=configs/deepseekv4flashmysql.config \
-		--config3=configs/deepseekv4flashmysqlv2.config \
+		--config=configs/mysql.config \
+		--config2=configs/mysql.config \
+		--config3=configs/mysql.config \
 		--warehouses=1 --transactions=500
 	@echo "Tests completed."
 
