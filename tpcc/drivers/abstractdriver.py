@@ -26,7 +26,7 @@
 
 from datetime import datetime
 
-import constants
+import tpcc.constants as constants
 
 ## ==============================================
 ## AbstractDriver

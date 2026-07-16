@@ -6,9 +6,9 @@ Created on May 2, 2011
 Scalaris Driver for CS227 TPCC Benchmark
 '''
 
-from abstractdriver import *
+from tpcc.drivers.abstractdriver import *
 
-import os, logging, commands, constants
+import os, logging, commands, tpcc.constants as constants
 
 from collections import defaultdict
 
@@ -17,14 +17,14 @@ from api.Scalaris import JSONConnection, Transaction, TransactionSingleOp, NotFo
 
 #Table Definitions
 TABLE_COLUMNS = {
-    constants.TABLENAME_ITEM: [
+    tpcc.constants.TABLENAME_ITEM: [
         "I_ID", # INTEGER
         "I_IM_ID", # INTEGER
         "I_NAME", # VARCHAR
         "I_PRICE", # FLOAT
         "I_DATA", # VARCHAR
     ],
-    constants.TABLENAME_WAREHOUSE: [
+    tpcc.constants.TABLENAME_WAREHOUSE: [
         "W_ID", # SMALLINT
         "W_NAME", # VARCHAR
         "W_STREET_1", # VARCHAR
@@ -35,7 +35,7 @@ TABLE_COLUMNS = {
         "W_TAX", # FLOAT
         "W_YTD", # FLOAT
     ],    
-    constants.TABLENAME_DISTRICT: [
+    tpcc.constants.TABLENAME_DISTRICT: [
         "D_ID", # TINYINT
         "D_W_ID", # SMALLINT
         "D_NAME", # VARCHAR
@@ -48,7 +48,7 @@ TABLE_COLUMNS = {
         "D_YTD", # FLOAT
         "D_NEXT_O_ID", # INT
     ],
-    constants.TABLENAME_CUSTOMER:   [
+    tpcc.constants.TABLENAME_CUSTOMER:   [
         "C_ID", # INTEGER
         "C_D_ID", # TINYINT
         "C_W_ID", # SMALLINT
@@ -71,7 +71,7 @@ TABLE_COLUMNS = {
         "C_DELIVERY_CNT", # INTEGER
         "C_DATA", # VARCHAR
     ],
-    constants.TABLENAME_STOCK:      [
+    tpcc.constants.TABLENAME_STOCK:      [
         "S_I_ID", # INTEGER
         "S_W_ID", # SMALLINT
         "S_QUANTITY", # INTEGER
@@ -90,7 +90,7 @@ TABLE_COLUMNS = {
         "S_REMOTE_CNT", # INTEGER
         "S_DATA", # VARCHAR
     ],
-    constants.TABLENAME_ORDERS:     [
+    tpcc.constants.TABLENAME_ORDERS:     [
         "O_ID", # INTEGER
         "O_D_ID", # TINYINT
         "O_W_ID", # SMALLINT
@@ -100,12 +100,12 @@ TABLE_COLUMNS = {
         "O_OL_CNT", # INTEGER
         "O_ALL_LOCAL", # INTEGER
     ],
-    constants.TABLENAME_NEW_ORDER:  [
+    tpcc.constants.TABLENAME_NEW_ORDER:  [
         "NO_O_ID", # INTEGER
         "NO_D_ID", # TINYINT
         "NO_W_ID", # SMALLINT
     ],
-    constants.TABLENAME_ORDER_LINE: [
+    tpcc.constants.TABLENAME_ORDER_LINE: [
         "OL_O_ID", # INTEGER
         "OL_D_ID", # TINYINT
         "OL_W_ID", # SMALLINT
@@ -117,7 +117,7 @@ TABLE_COLUMNS = {
         "OL_AMOUNT", # FLOAT
         "OL_DIST_INFO", # VARCHAR
     ],
-    constants.TABLENAME_HISTORY:    [
+    tpcc.constants.TABLENAME_HISTORY:    [
         "H_C_ID", # INTEGER
         "H_C_D_ID", # TINYINT
         "H_C_W_ID", # SMALLINT
@@ -129,37 +129,37 @@ TABLE_COLUMNS = {
     ],
 }
 TABLE_INDEXES = {
-    constants.TABLENAME_ITEM: [
+    tpcc.constants.TABLENAME_ITEM: [
         "I_ID",
     ],
-    constants.TABLENAME_WAREHOUSE: [
+    tpcc.constants.TABLENAME_WAREHOUSE: [
         "W_ID",
     ],    
-    constants.TABLENAME_DISTRICT: [
+    tpcc.constants.TABLENAME_DISTRICT: [
         "D_ID",
         "D_W_ID",
     ],
-    constants.TABLENAME_CUSTOMER:   [
+    tpcc.constants.TABLENAME_CUSTOMER:   [
         "C_ID",
         "C_D_ID",
         "C_W_ID",
     ],
-    constants.TABLENAME_STOCK:      [
+    tpcc.constants.TABLENAME_STOCK:      [
         "S_I_ID",
         "S_W_ID",
     ],
-    constants.TABLENAME_ORDERS:     [
+    tpcc.constants.TABLENAME_ORDERS:     [
         "O_ID",
         "O_D_ID",
         "O_W_ID",
         "O_C_ID",
     ],
-    constants.TABLENAME_NEW_ORDER:  [
+    tpcc.constants.TABLENAME_NEW_ORDER:  [
         "NO_O_ID",
         "NO_D_ID",
         "NO_W_ID",
     ],
-    constants.TABLENAME_ORDER_LINE: [
+    tpcc.constants.TABLENAME_ORDER_LINE: [
         "OL_O_ID",
         "OL_D_ID",
         "OL_W_ID",
@@ -170,19 +170,19 @@ def createPrimaryKey(tableName, id, obj):
     '''
     Helper method to create normalized primary keys
     '''
-    if tableName == constants.TABLENAME_ITEM:
-        return '%s.%s' % (constants.TABLENAME_ITEM, id)
-    elif tableName == constants.TABLENAME_WAREHOUSE:
-        return '%s.%s' %(constants.TABLENAME_WAREHOUSE, id)
-    elif tableName == constants.TABLENAME_DISTRICT:
-        return '%s.%s.%s.%s' % (constants.TABLENAME_WAREHOUSE, obj['D_W_ID'], constants.TABLENAME_DISTRICT, id)
-    elif tableName == constants.TABLENAME_CUSTOMER:
-        return '%s.%s.%s.%s.%s.%s' % (constants.TABLENAME_WAREHOUSE, obj['C_W_ID'], \
-                                constants.TABLENAME_DISTRICT, obj['C_D_ID'], constants.TABLENAME_CUSTOMER, id)
-    elif tableName == constants.TABLENAME_ORDERS:
-        return '%s.%s.%s.%s.%s.%s.%s.%s' % (constants.TABLENAME_WAREHOUSE, obj['O_W_ID'], \
-                                constants.TABLENAME_DISTRICT, obj['O_D_ID'], constants.TABLENAME_CUSTOMER, obj['O_C_ID'], \
-                                constants.TABLENAME_ORDERS, id)
+    if tableName == tpcc.constants.TABLENAME_ITEM:
+        return '%s.%s' % (tpcc.constants.TABLENAME_ITEM, id)
+    elif tableName == tpcc.constants.TABLENAME_WAREHOUSE:
+        return '%s.%s' %(tpcc.constants.TABLENAME_WAREHOUSE, id)
+    elif tableName == tpcc.constants.TABLENAME_DISTRICT:
+        return '%s.%s.%s.%s' % (tpcc.constants.TABLENAME_WAREHOUSE, obj['D_W_ID'], tpcc.constants.TABLENAME_DISTRICT, id)
+    elif tableName == tpcc.constants.TABLENAME_CUSTOMER:
+        return '%s.%s.%s.%s.%s.%s' % (tpcc.constants.TABLENAME_WAREHOUSE, obj['C_W_ID'], \
+                                tpcc.constants.TABLENAME_DISTRICT, obj['C_D_ID'], tpcc.constants.TABLENAME_CUSTOMER, id)
+    elif tableName == tpcc.constants.TABLENAME_ORDERS:
+        return '%s.%s.%s.%s.%s.%s.%s.%s' % (tpcc.constants.TABLENAME_WAREHOUSE, obj['O_W_ID'], \
+                                tpcc.constants.TABLENAME_DISTRICT, obj['O_D_ID'], tpcc.constants.TABLENAME_CUSTOMER, obj['O_C_ID'], \
+                                tpcc.constants.TABLENAME_ORDERS, id)
     else:
         return '%s.%s' % (tableName,id)
         
@@ -234,19 +234,19 @@ class ScalarisDriver(AbstractDriver):
         return Transaction(self.conn)
     
     def loadTuples(self, tableName, tuples):
-        s = set([constants.TABLENAME_HISTORY, \
-                 constants.TABLENAME_NEW_ORDER, \
-                 constants.TABLENAME_ORDER_LINE,\
-                 constants.TABLENAME_STOCK])
+        s = set([tpcc.constants.TABLENAME_HISTORY, \
+                 tpcc.constants.TABLENAME_NEW_ORDER, \
+                 tpcc.constants.TABLENAME_ORDER_LINE,\
+                 tpcc.constants.TABLENAME_STOCK])
         
         if tableName in s:
             self.loadComplexTuples(tableName,tuples)
         else:
             self.loadSimpleTuples(tableName, tuples)
             
-            if tableName == constants.TABLENAME_ORDERS:
+            if tableName == tpcc.constants.TABLENAME_ORDERS:
                 self.loadOrderCustomer(tableName, tuples)
-            if tableName == constants.TABLENAME_CUSTOMER:
+            if tableName == tpcc.constants.TABLENAME_CUSTOMER:
                 self.loadWarehouseDistrictCustomers(tableName, tuples)
 
     def loadHistory(self,tuples):
@@ -254,7 +254,7 @@ class ScalarisDriver(AbstractDriver):
         Specialized method for history table. History is stored based on customer info.
         '''
         history_d=defaultdict(lambda : defaultdict(lambda : defaultdict(list)))
-        tableDef = TABLE_COLUMNS[constants.TABLENAME_HISTORY]
+        tableDef = TABLE_COLUMNS[tpcc.constants.TABLENAME_HISTORY]
         for tuple in tuples:
             history = dict(zip(tableDef,tuple))
             w_id = history["H_C_W_ID"]
@@ -266,10 +266,10 @@ class ScalarisDriver(AbstractDriver):
         for w in history_d.keys():
             for d in history_d[w].keys():
                 for o in history_d[w][d].keys():
-                    history_key = '%s.%s.%s.%s.%s.%s.%s' % (constants.TABLENAME_WAREHOUSE, w,\
-                                                    constants.TABLENAME_DISTRICT, d, \
-                                                    constants.TABLENAME_CUSTOMER, o,\
-                                                    constants.TABLENAME_HISTORY)
+                    history_key = '%s.%s.%s.%s.%s.%s.%s' % (tpcc.constants.TABLENAME_WAREHOUSE, w,\
+                                                    tpcc.constants.TABLENAME_DISTRICT, d, \
+                                                    tpcc.constants.TABLENAME_CUSTOMER, o,\
+                                                    tpcc.constants.TABLENAME_HISTORY)
                     self.tran.write(history_key, history_d[w][d][o]) 
 
     def loadStock(self,tuples):
@@ -282,7 +282,7 @@ class ScalarisDriver(AbstractDriver):
         self.tran = TransactionSingleOp(self.conn)
         
         stock_d = defaultdict(defaultdict)
-        tableDef = TABLE_COLUMNS[constants.TABLENAME_STOCK]
+        tableDef = TABLE_COLUMNS[tpcc.constants.TABLENAME_STOCK]
         stock_idx = defaultdict(list)
         
         for tuple in tuples:
@@ -295,14 +295,14 @@ class ScalarisDriver(AbstractDriver):
             stock_idx[s_w_id].append(stock_short)
         
         for s in stock_d.keys():
-            s_key = '%s.%s.%s' % (constants.TABLENAME_WAREHOUSE, s, constants.TABLENAME_STOCK)
+            s_key = '%s.%s.%s' % (tpcc.constants.TABLENAME_WAREHOUSE, s, tpcc.constants.TABLENAME_STOCK)
             print "key %s" % s_key
             print "value %s" % stock_idx[s]
             self.tran.write(s_key, stock_idx[s])
             
         for w in stock_d.keys():
             for i in stock_d[w].keys():
-                s_key = '%s.%s.%s.%s' % (constants.TABLENAME_WAREHOUSE, w, constants.TABLENAME_STOCK, i)
+                s_key = '%s.%s.%s.%s' % (tpcc.constants.TABLENAME_WAREHOUSE, w, tpcc.constants.TABLENAME_STOCK, i)
                 self.tran.write(s_key, stock_d[s][i])
            
            
@@ -315,7 +315,7 @@ class ScalarisDriver(AbstractDriver):
         '''
         ol_d=defaultdict(lambda : defaultdict(lambda : defaultdict(list)))
         order_ids = defaultdict(lambda : defaultdict(list))
-        tableDef = TABLE_COLUMNS[constants.TABLENAME_ORDER_LINE]
+        tableDef = TABLE_COLUMNS[tpcc.constants.TABLENAME_ORDER_LINE]
         for tuple in tuples:
             no = dict(zip(tableDef,tuple))
             w_id = no["OL_W_ID"]
@@ -328,15 +328,15 @@ class ScalarisDriver(AbstractDriver):
         for w in ol_d.keys():
             for d in ol_d[w].keys():
                 for o in ol_d[w][d].keys():
-                    ol_key = '%s.%s.%s.%s.%s.%s' % (constants.TABLENAME_WAREHOUSE, w,\
-                                                    constants.TABLENAME_DISTRICT, d, \
-                                                    constants.TABLENAME_ORDER_LINE, o)
+                    ol_key = '%s.%s.%s.%s.%s.%s' % (tpcc.constants.TABLENAME_WAREHOUSE, w,\
+                                                    tpcc.constants.TABLENAME_DISTRICT, d, \
+                                                    tpcc.constants.TABLENAME_ORDER_LINE, o)
                     self.tran.write(ol_key, ol_d[w][d][o])
         for w in order_ids.keys():
             for d in order_ids[w].keys():
-                no_key = '%s.%s.%s.%s.%s' % (constants.TABLENAME_WAREHOUSE, w,\
-                                                    constants.TABLENAME_DISTRICT, d, \
-                                                    constants.TABLENAME_ORDER_LINE)
+                no_key = '%s.%s.%s.%s.%s' % (tpcc.constants.TABLENAME_WAREHOUSE, w,\
+                                                    tpcc.constants.TABLENAME_DISTRICT, d, \
+                                                    tpcc.constants.TABLENAME_ORDER_LINE)
                 self.tran.write(no_key, order_ids[w][d])
     
     def loadNewOrder(self,tuples):
@@ -347,7 +347,7 @@ class ScalarisDriver(AbstractDriver):
         '''
         no_d=defaultdict(lambda : defaultdict(lambda : defaultdict(list)))
         order_ids = defaultdict(lambda : defaultdict(list))
-        tableDef = TABLE_COLUMNS[constants.TABLENAME_NEW_ORDER]
+        tableDef = TABLE_COLUMNS[tpcc.constants.TABLENAME_NEW_ORDER]
         for tuple in tuples:
             no = dict(zip(tableDef,tuple))
             w_id = no["NO_W_ID"]
@@ -360,29 +360,29 @@ class ScalarisDriver(AbstractDriver):
         for w in no_d.keys():
             for d in no_d[w].keys():
                 for o in no_d[w][d].keys():
-                    no_key = '%s.%s.%s.%s.%s.%s' % (constants.TABLENAME_WAREHOUSE, w,\
-                                                    constants.TABLENAME_DISTRICT, d, \
-                                                    constants.TABLENAME_NEW_ORDER, o)
+                    no_key = '%s.%s.%s.%s.%s.%s' % (tpcc.constants.TABLENAME_WAREHOUSE, w,\
+                                                    tpcc.constants.TABLENAME_DISTRICT, d, \
+                                                    tpcc.constants.TABLENAME_NEW_ORDER, o)
                     self.tran.write(no_key, no_d[w][d][o])
 
         for w in order_ids.keys():
             for d in order_ids[w].keys():
-                no_key = '%s.%s.%s.%s.%s' % (constants.TABLENAME_WAREHOUSE, w,\
-                                                    constants.TABLENAME_DISTRICT, d, \
-                                                    constants.TABLENAME_NEW_ORDER)
+                no_key = '%s.%s.%s.%s.%s' % (tpcc.constants.TABLENAME_WAREHOUSE, w,\
+                                                    tpcc.constants.TABLENAME_DISTRICT, d, \
+                                                    tpcc.constants.TABLENAME_NEW_ORDER)
                 self.tran.write(no_key, order_ids[w][d])
     
     def loadComplexTuples(self, tableName, tuples):
         '''
         Dispatching method for tuples that need secondary/advanced indexing
         '''
-        if tableName == constants.TABLENAME_ORDER_LINE:
+        if tableName == tpcc.constants.TABLENAME_ORDER_LINE:
             self.loadOrderLine(tuples)
-        if tableName == constants.TABLENAME_NEW_ORDER:
+        if tableName == tpcc.constants.TABLENAME_NEW_ORDER:
             self.loadNewOrder(tuples)
-        if tableName == constants.TABLENAME_HISTORY:
+        if tableName == tpcc.constants.TABLENAME_HISTORY:
             self.loadHistory(tuples)
-        if tableName == constants.TABLENAME_STOCK:
+        if tableName == tpcc.constants.TABLENAME_STOCK:
             self.loadStock(tuples)
         #self.tran.commit()
             
@@ -406,7 +406,7 @@ class ScalarisDriver(AbstractDriver):
             d_id = value['O_D_ID']
             w_id = value['O_W_ID']
             
-            oc_key = '%s.%s.%s.%s.%s.%s' % (constants.TABLENAME_WAREHOUSE,w_id, constants.TABLENAME_DISTRICT,d_id, constants.TABLENAME_ORDERS,o_id)
+            oc_key = '%s.%s.%s.%s.%s.%s' % (tpcc.constants.TABLENAME_WAREHOUSE,w_id, tpcc.constants.TABLENAME_DISTRICT,d_id, tpcc.constants.TABLENAME_ORDERS,o_id)
             self.tran.write(oc_key, c_id)
             
             o_d[w_id][d_id][c_id].append(str(o_id))
@@ -414,8 +414,8 @@ class ScalarisDriver(AbstractDriver):
         for k1 in o_d.keys():
             for k2 in o_d[k1].keys():
                 for k3 in o_d[k1][k2].keys():
-                    orders_key = '%s.%s.%s.%s.%s.%s.%s' % (constants.TABLENAME_WAREHOUSE, k1, constants.TABLENAME_DISTRICT, k2, \
-                                            constants.TABLENAME_CUSTOMER, k3, constants.TABLENAME_ORDERS)
+                    orders_key = '%s.%s.%s.%s.%s.%s.%s' % (tpcc.constants.TABLENAME_WAREHOUSE, k1, tpcc.constants.TABLENAME_DISTRICT, k2, \
+                                            tpcc.constants.TABLENAME_CUSTOMER, k3, tpcc.constants.TABLENAME_ORDERS)
                     self.tran.write(orders_key,o_d[k1][k2][k3])
                     
     
@@ -442,8 +442,8 @@ class ScalarisDriver(AbstractDriver):
         
         for w in custs.keys():
             for d in custs[w].keys():
-                custs_key = '%s.%s.%s.%s.%s' % (constants.TABLENAME_WAREHOUSE, w,\
-                                                    constants.TABLENAME_DISTRICT, d, \
+                custs_key = '%s.%s.%s.%s.%s' % (tpcc.constants.TABLENAME_WAREHOUSE, w,\
+                                                    tpcc.constants.TABLENAME_DISTRICT, d, \
                                                     'CUSTOMERS')
                 self.tran.write(custs_key, custs[w][d])
  
@@ -500,10 +500,10 @@ class ScalarisDriver(AbstractDriver):
         ol_delivery_d = params["ol_delivery_d"]
 
         result = [ ]
-        for d_id in range(1, constants.DISTRICTS_PER_WAREHOUSE+1):
+        for d_id in range(1, tpcc.constants.DISTRICTS_PER_WAREHOUSE+1):
             ## getNewOrder
             ## WAREHOUSE.W_ID.DISTRICT.D_ID.NEW_ORDERS -> List of New Orders 
-            no_key = '%s.%s.%s.%s.%s' % (constants.TABLENAME_WAREHOUSE, w_id, constants.TABLENAME_DISTRICT, d_id, constants.TABLENAME_NEW_ORDER)
+            no_key = '%s.%s.%s.%s.%s' % (tpcc.constants.TABLENAME_WAREHOUSE, w_id, tpcc.constants.TABLENAME_DISTRICT, d_id, tpcc.constants.TABLENAME_NEW_ORDER)
             
             newOrders = None
             newOrders = self.tran.read(no_key) #we expect a list of new order ifd
@@ -521,9 +521,9 @@ class ScalarisDriver(AbstractDriver):
             ## getCId
             ## WAREHOUSE.W_ID.DISTRICT.D_ID.ORDER.ORDER_ID = List of Customers
             customer = None
-            c_key = '%s.%s.%s.%s.%s.%s' % (constants.TABLENAME_WAREHOUSE, w_id, \
-                                     constants.TABLENAME_DISTRICT, d_id, \
-                                     constants.TABLENAME_ORDERS, no_o_id)
+            c_key = '%s.%s.%s.%s.%s.%s' % (tpcc.constants.TABLENAME_WAREHOUSE, w_id, \
+                                     tpcc.constants.TABLENAME_DISTRICT, d_id, \
+                                     tpcc.constants.TABLENAME_ORDERS, no_o_id)
             
             customer = self.tran.read(c_key)
             assert customer != None
@@ -532,9 +532,9 @@ class ScalarisDriver(AbstractDriver):
             ## sumOLAmount
             ## WAREHOUSE.W_ID.DISTRICT.D_ID.ORDER_LINE.ORDER_ID -> List of OrderLine Objects or list of OL_NUMBERS
             orderLines = []
-            ol_key = '%s.%s.%s.%s.%s.%s' % (constants.TABLENAME_WAREHOUSE, w_id, \
-                                     constants.TABLENAME_DISTRICT, d_id, \
-                                     constants.TABLENAME_ORDER_LINE, no_o_id)
+            ol_key = '%s.%s.%s.%s.%s.%s' % (tpcc.constants.TABLENAME_WAREHOUSE, w_id, \
+                                     tpcc.constants.TABLENAME_DISTRICT, d_id, \
+                                     tpcc.constants.TABLENAME_ORDER_LINE, no_o_id)
             
             orderLines = self.tran.read(ol_key)
             
@@ -546,12 +546,12 @@ class ScalarisDriver(AbstractDriver):
             
             ## deleteNewOrder
             #self.new_order.remove({"NO_D_ID": d_id, "NO_W_ID": w_id, "NO_O_ID": no_o_id})
-            no_del_key = '%s.%s.%s.%s.%s.%s' % (constants.TABLENAME_WAREHOUSE, w_id, constants.TABLENAME_DISTRICT, d_id, constants.TABLENAME_NEW_ORDER, no_o_id)
+            no_del_key = '%s.%s.%s.%s.%s.%s' % (tpcc.constants.TABLENAME_WAREHOUSE, w_id, tpcc.constants.TABLENAME_DISTRICT, d_id, tpcc.constants.TABLENAME_NEW_ORDER, no_o_id)
             self.tran.write(no_del_key, None)
             self.tran.write(no_key,newOrders)
             
             ## updateOrders
-            order_key = '%s.%s.%s.%s.%s.%s.%s.%s' % (constants.TABLENAME_WAREHOUSE, w_id, constants.TABLENAME_DISTRICT, d_id, constants.TABLENAME_CUSTOMER, c_id, constants.TABLENAME_ORDERS, no_o_id)
+            order_key = '%s.%s.%s.%s.%s.%s.%s.%s' % (tpcc.constants.TABLENAME_WAREHOUSE, w_id, tpcc.constants.TABLENAME_DISTRICT, d_id, tpcc.constants.TABLENAME_CUSTOMER, c_id, tpcc.constants.TABLENAME_ORDERS, no_o_id)
             order = self.tran.read(order_key)
             order['O_CARRIER_ID'] = o_carrier_id
             self.tran.write(order_key, order)
@@ -570,8 +570,8 @@ class ScalarisDriver(AbstractDriver):
             assert ol_total > 0.0
 
             ## updateCustomer
-            customer_key = '%s.%s.%s.%s.%s.%s' % (constants.TABLENAME_WAREHOUSE, w_id, \
-                                constants.TABLENAME_DISTRICT, d_id, constants.TABLENAME_CUSTOMER, c_id)
+            customer_key = '%s.%s.%s.%s.%s.%s' % (tpcc.constants.TABLENAME_WAREHOUSE, w_id, \
+                                tpcc.constants.TABLENAME_DISTRICT, d_id, tpcc.constants.TABLENAME_CUSTOMER, c_id)
             
             customer = self.tran.read(customer_key)
             customer["C_BALANCE"]=customer["C_BALANCE"]+ol_total
@@ -606,7 +606,7 @@ class ScalarisDriver(AbstractDriver):
         ## ITEM.I_ID
         items = []
         for id in i_ids:
-            i_key = '%s.%s' % (constants.TABLENAME_ITEM, id)
+            i_key = '%s.%s' % (tpcc.constants.TABLENAME_ITEM, id)
             item = self.tran.read(i_key)
             if item:
                 items.append(item)
@@ -624,7 +624,7 @@ class ScalarisDriver(AbstractDriver):
         
         # getWarehouseTaxRate
         ## WAREHOUSE.W_ID -> warehouse object
-        w_key = '%s.%s' % (constants.TABLENAME_WAREHOUSE, w_id)
+        w_key = '%s.%s' % (tpcc.constants.TABLENAME_WAREHOUSE, w_id)
         w = self.tran.read(w_key)
         assert w
         w_tax = w["W_TAX"]
@@ -632,7 +632,7 @@ class ScalarisDriver(AbstractDriver):
         # getDistrict
         ## WAREHOUSE.W_ID.DISTRICT.D_ID -> district object
         
-        d_key = '%s.%s.%s.%s' % (constants.TABLENAME_WAREHOUSE, w_id, constants.TABLENAME_DISTRICT, d_id)
+        d_key = '%s.%s.%s.%s' % (tpcc.constants.TABLENAME_WAREHOUSE, w_id, tpcc.constants.TABLENAME_DISTRICT, d_id)
         d = self.tran.read(d_key)
         assert d
         d_tax = d["D_TAX"]
@@ -646,8 +646,8 @@ class ScalarisDriver(AbstractDriver):
         
         # getCustomer
         ## WAREHOUSE.W_ID.DISTRICT.D_ID.CUSTOMER.C_ID -> Customer Object
-        c_key = '%s.%s.%s.%s.%s.%s' % (constants.TABLENAME_WAREHOUSE, w_id, constants.TABLENAME_DISTRICT, d_id, \
-                                       constants.TABLENAME_CUSTOMER, c_id)    
+        c_key = '%s.%s.%s.%s.%s.%s' % (tpcc.constants.TABLENAME_WAREHOUSE, w_id, tpcc.constants.TABLENAME_DISTRICT, d_id, \
+                                       tpcc.constants.TABLENAME_CUSTOMER, c_id)    
         c = self.tran.read(c_key)
         assert c
         c_discount = c["C_DISCOUNT"]
@@ -656,12 +656,12 @@ class ScalarisDriver(AbstractDriver):
         ## Insert Order Information
         ## ----------------
         ol_cnt = len(i_ids)
-        o_carrier_id = constants.NULL_CARRIER_ID
+        o_carrier_id = tpcc.constants.NULL_CARRIER_ID
         
         # createOrder
         ## write to order object to WAREHOUSE.W_ID.DISTRICT.D_ID.CUSTOMER.C_ID.ORDER.O_ID
-        o_key = '%s.%s.%s.%s.%s.%s.%s.%s' % (constants.TABLENAME_WAREHOUSE, w_id, constants.TABLENAME_DISTRICT, d_id, \
-                                       constants.TABLENAME_CUSTOMER, c_id,  constants.TABLENAME_ORDERS, d_next_o_id)
+        o_key = '%s.%s.%s.%s.%s.%s.%s.%s' % (tpcc.constants.TABLENAME_WAREHOUSE, w_id, tpcc.constants.TABLENAME_DISTRICT, d_id, \
+                                       tpcc.constants.TABLENAME_CUSTOMER, c_id,  tpcc.constants.TABLENAME_ORDERS, d_next_o_id)
         
         order = {#"O_ID": d_next_o_id, 
                  "O_D_ID": d_id, 
@@ -682,7 +682,7 @@ class ScalarisDriver(AbstractDriver):
         ## assumption
         ##  WAREHOUSE.W_ID.DISTRICT.D_ID.NEW_ORDER.ORDER_ID -> List of New Order Objects
         new_order = {"NO_O_ID": d_next_o_id, "NO_D_ID": d_id, "NO_W_ID": w_id}
-        no_key = '%s.%s.%s.%s.%s.%s' % (constants.TABLENAME_WAREHOUSE, w_id, constants.TABLENAME_DISTRICT, d_id, constants.TABLENAME_NEW_ORDER, d_next_o_id)
+        no_key = '%s.%s.%s.%s.%s.%s' % (tpcc.constants.TABLENAME_WAREHOUSE, w_id, tpcc.constants.TABLENAME_DISTRICT, d_id, tpcc.constants.TABLENAME_NEW_ORDER, d_next_o_id)
         
         try:
             new_orders = self.tran.read(no_key)
@@ -737,7 +737,7 @@ class ScalarisDriver(AbstractDriver):
             else:
                 ## WAREHOUSE.W_ID.STOCK.S_ID
                 
-                allStocks_key = '%s.%s.%s' % (constants.TABLENAME_WAREHOUSE, w_id, constants.TABLENAME_STOCK)
+                allStocks_key = '%s.%s.%s' % (tpcc.constants.TABLENAME_WAREHOUSE, w_id, tpcc.constants.TABLENAME_STOCK)
                 allStocks = self.tran.read(allStocks_key)
                 
                 for stock in allStocks:
@@ -747,7 +747,7 @@ class ScalarisDriver(AbstractDriver):
                 
             assert si, "Failed to find S_I_ID: %d\n%s" % (ol_i_id, pformat(itemInfo))
             
-            si_key = '%s.%s.%s.%s' % (constants.TABLENAME_WAREHOUSE, w_id, constants.TABLENAME_STOCK, si['S_I_ID'])
+            si_key = '%s.%s.%s.%s' % (tpcc.constants.TABLENAME_WAREHOUSE, w_id, tpcc.constants.TABLENAME_STOCK, si['S_I_ID'])
             stock= self.tran.read(si_key)
             
             
@@ -779,7 +779,7 @@ class ScalarisDriver(AbstractDriver):
             self.tran.write(si_key, stock)
             
 
-            if i_data.find(constants.ORIGINAL_STRING) != -1 and s_data.find(constants.ORIGINAL_STRING) != -1:
+            if i_data.find(tpcc.constants.ORIGINAL_STRING) != -1 and s_data.find(tpcc.constants.ORIGINAL_STRING) != -1:
                 brand_generic = 'B'
             else:
                 brand_generic = 'G'
@@ -799,8 +799,8 @@ class ScalarisDriver(AbstractDriver):
                            "OL_DIST_INFO": s_dist_xx}
 
             ##WAREHOUSE.W_ID.DISTRICT.D_ID.ORDER_LINE.ORDER_ID -> List of OrderLine Objects
-            ol_key = '%s.%s.%s.%s.%s.%s' % (constants.TABLENAME_WAREHOUSE, w_id, constants.TABLENAME_DISTRICT, d_id, \
-                                            constants.TABLENAME_ORDER_LINE, d_next_o_id)
+            ol_key = '%s.%s.%s.%s.%s.%s' % (tpcc.constants.TABLENAME_WAREHOUSE, w_id, tpcc.constants.TABLENAME_DISTRICT, d_id, \
+                                            tpcc.constants.TABLENAME_ORDER_LINE, d_next_o_id)
             
             try:
                 order_lines = self.tran.read(ol_key)
@@ -838,15 +838,15 @@ class ScalarisDriver(AbstractDriver):
 
         if c_id != None:
             # getCustomerByCustomerId
-            cust_key = '%s.%s.%s.%s.%s.%s' % (constants.TABLENAME_WAREHOUSE, w_id, \
-                                constants.TABLENAME_DISTRICT, d_id, constants.TABLENAME_CUSTOMER, c_id)
+            cust_key = '%s.%s.%s.%s.%s.%s' % (tpcc.constants.TABLENAME_WAREHOUSE, w_id, \
+                                tpcc.constants.TABLENAME_DISTRICT, d_id, tpcc.constants.TABLENAME_CUSTOMER, c_id)
             c = self.tran.read(cust_key)
         else:
             # getCustomersByLastName
             # Get the midpoint customer's id
             #WAREHOUSE.W_ID.DISTRICT.D_ID.CUSTOMERS -> List of Customers (or C_ID:C_LAST pairs)
-            all_customers_key = '%s.%s.%s.%s.CUSTOMERS' % (constants.TABLENAME_WAREHOUSE, w_id, \
-                                constants.TABLENAME_DISTRICT, d_id)
+            all_customers_key = '%s.%s.%s.%s.CUSTOMERS' % (tpcc.constants.TABLENAME_WAREHOUSE, w_id, \
+                                tpcc.constants.TABLENAME_DISTRICT, d_id)
             
             all_customers = self.tran.read(all_customers_key)
             all_customers = [customer for customer in all_customers if customer['C_LAST']==c_last]
@@ -856,20 +856,20 @@ class ScalarisDriver(AbstractDriver):
             index = (namecnt-1)/2
             c = all_customers[index]
             c_id = c["C_ID"]
-            cust_key = '%s.%s.%s.%s.%s.%s' % (constants.TABLENAME_WAREHOUSE, w_id, \
-                                constants.TABLENAME_DISTRICT, d_id, constants.TABLENAME_CUSTOMER, c_id)
+            cust_key = '%s.%s.%s.%s.%s.%s' % (tpcc.constants.TABLENAME_WAREHOUSE, w_id, \
+                                tpcc.constants.TABLENAME_DISTRICT, d_id, tpcc.constants.TABLENAME_CUSTOMER, c_id)
             c = self.tran.read(cust_key)
 
         # getLastOrder
         ## WAREHOUSE.W_ID.DISTRICT.D_ID.CUSTOMER.C_ID.ORDERS - > List of Orders
-        orders_key = '%s.%s.%s.%s.%s.%s.%s' % (constants.TABLENAME_WAREHOUSE, w_id, constants.TABLENAME_DISTRICT, d_id, \
-                                            constants.TABLENAME_CUSTOMER, c_id, constants.TABLENAME_ORDERS)
+        orders_key = '%s.%s.%s.%s.%s.%s.%s' % (tpcc.constants.TABLENAME_WAREHOUSE, w_id, tpcc.constants.TABLENAME_DISTRICT, d_id, \
+                                            tpcc.constants.TABLENAME_CUSTOMER, c_id, tpcc.constants.TABLENAME_ORDERS)
         orders = self.tran.read(orders_key)
         
         o_id = max(orders)
 
-        order_key = '%s.%s.%s.%s.%s.%s.%s.%s' % (constants.TABLENAME_WAREHOUSE, w_id, constants.TABLENAME_DISTRICT, d_id, \
-                                            constants.TABLENAME_CUSTOMER, c_id, constants.TABLENAME_ORDERS, o_id)
+        order_key = '%s.%s.%s.%s.%s.%s.%s.%s' % (tpcc.constants.TABLENAME_WAREHOUSE, w_id, tpcc.constants.TABLENAME_DISTRICT, d_id, \
+                                            tpcc.constants.TABLENAME_CUSTOMER, c_id, tpcc.constants.TABLENAME_ORDERS, o_id)
 
 
         order = self.tran.read(order_key)
@@ -878,8 +878,8 @@ class ScalarisDriver(AbstractDriver):
             # getOrderLines
 
             ## WAREHOUSE.W_ID.DISTRICT.D_ID.CUSTOMER.ORDER_LINE.O_ID -> List of Orderline Objects 
-            ol_key = '%s.%s.%s.%s.%s.%s' % (constants.TABLENAME_WAREHOUSE, w_id, constants.TABLENAME_DISTRICT, d_id, \
-                                            constants.TABLENAME_ORDER_LINE, o_id)
+            ol_key = '%s.%s.%s.%s.%s.%s' % (tpcc.constants.TABLENAME_WAREHOUSE, w_id, tpcc.constants.TABLENAME_DISTRICT, d_id, \
+                                            tpcc.constants.TABLENAME_ORDER_LINE, o_id)
             orderLines = self.tran.read(ol_key)
         else:
             orderLines = [ ]
@@ -903,15 +903,15 @@ class ScalarisDriver(AbstractDriver):
 
         if c_id != None:
             # getCustomerByCustomerId
-            cust_key = '%s.%s.%s.%s.%s.%s' % (constants.TABLENAME_WAREHOUSE, c_w_id, \
-                                constants.TABLENAME_DISTRICT, c_d_id, constants.TABLENAME_CUSTOMER, c_id)
+            cust_key = '%s.%s.%s.%s.%s.%s' % (tpcc.constants.TABLENAME_WAREHOUSE, c_w_id, \
+                                tpcc.constants.TABLENAME_DISTRICT, c_d_id, tpcc.constants.TABLENAME_CUSTOMER, c_id)
             c = self.tran.read(cust_key)
         else:
             # getCustomersByLastName
             # Get the midpoint customer's id
             #WAREHOUSE.W_ID.DISTRICT.D_ID.CUSTOMERS -> List of Customers (or C_ID:C_LAST pairs)
-            all_customers_key = '%s.%s.%s.%s.CUSTOMERS' % (constants.TABLENAME_WAREHOUSE, c_w_id, \
-                                constants.TABLENAME_DISTRICT, c_d_id)
+            all_customers_key = '%s.%s.%s.%s.CUSTOMERS' % (tpcc.constants.TABLENAME_WAREHOUSE, c_w_id, \
+                                tpcc.constants.TABLENAME_DISTRICT, c_d_id)
             
             all_customers = self.tran.read(all_customers_key)
             all_customers = [customer for customer in all_customers if customer['C_LAST']==c_last]
@@ -921,8 +921,8 @@ class ScalarisDriver(AbstractDriver):
             index = (namecnt-1)/2
             c = all_customers[index]
             c_id = c["C_ID"]
-            cust_key = '%s.%s.%s.%s.%s.%s' % (constants.TABLENAME_WAREHOUSE, c_w_id, \
-                                constants.TABLENAME_DISTRICT, c_d_id, constants.TABLENAME_CUSTOMER, c_id)
+            cust_key = '%s.%s.%s.%s.%s.%s' % (tpcc.constants.TABLENAME_WAREHOUSE, c_w_id, \
+                                tpcc.constants.TABLENAME_DISTRICT, c_d_id, tpcc.constants.TABLENAME_CUSTOMER, c_id)
             c = self.tran.read(cust_key)
        
         assert len(c) > 0
@@ -936,15 +936,15 @@ class ScalarisDriver(AbstractDriver):
         
         ## SCALARIS 
         ## WAREHOUSE.W_ID -> Warehouse Object
-        w_key = '%s.%s' % (constants.TABLENAME_WAREHOUSE, c_w_id)
+        w_key = '%s.%s' % (tpcc.constants.TABLENAME_WAREHOUSE, c_w_id)
         w = self.tran.read(w_key)
         assert w
         
         # getDistrict
         ## SCALARIS
         ## WAREHOUSE.W_ID.DISTRICT.D_ID - > District Object
-        d_key = '%s.%s.%s.%s' % (constants.TABLENAME_WAREHOUSE, w_id, \
-                                constants.TABLENAME_DISTRICT, d_id)
+        d_key = '%s.%s.%s.%s' % (tpcc.constants.TABLENAME_WAREHOUSE, w_id, \
+                                tpcc.constants.TABLENAME_DISTRICT, d_id)
         d = self.tran.read(d_key)
         assert d
         
@@ -957,10 +957,10 @@ class ScalarisDriver(AbstractDriver):
         self.tran.write(d_key, d)
         
         # Customer Credit Information
-        if c["C_CREDIT"] == constants.BAD_CREDIT:
+        if c["C_CREDIT"] == tpcc.constants.BAD_CREDIT:
             newData = " ".join(map(str, [c_id, c_d_id, c_w_id, d_id, w_id, h_amount]))
             c_data = (newData + "|" + c_data)
-            if len(c_data) > constants.MAX_C_DATA: c_data = c_data[:constants.MAX_C_DATA]
+            if len(c_data) > tpcc.constants.MAX_C_DATA: c_data = c_data[:tpcc.constants.MAX_C_DATA]
             
             c['C_DATA']=c_data
 
@@ -979,10 +979,10 @@ class ScalarisDriver(AbstractDriver):
                    "H_AMOUNT": h_amount, 
                    "H_DATA": h_data}
         
-        h_key = '%s.%s.%s.%s.%s.%s.%s' % (constants.TABLENAME_WAREHOUSE, c_w_id, \
-                                          constants.TABLENAME_DISTRICT, c_d_id, \
-                                          constants.TABLENAME_CUSTOMER, c_id,
-                                          constants.TABLENAME_HISTORY)
+        h_key = '%s.%s.%s.%s.%s.%s.%s' % (tpcc.constants.TABLENAME_WAREHOUSE, c_w_id, \
+                                          tpcc.constants.TABLENAME_DISTRICT, c_d_id, \
+                                          tpcc.constants.TABLENAME_CUSTOMER, c_id,
+                                          tpcc.constants.TABLENAME_HISTORY)
         histories = self.tran.read(h_key)
         if histories == None:
             histories = []
@@ -1010,16 +1010,16 @@ class ScalarisDriver(AbstractDriver):
         # getOId
         ## WAREHOUSE.W_ID.DISTRICT.D_ID -returns-> District Object w/ attribute: D_NEXT_O_ID
         ##
-        d_key = '%s.%s.%s.%s' % (constants.TABLENAME_WAREHOUSE, w_id, constants.TABLENAME_DISTRICT, d_id)
+        d_key = '%s.%s.%s.%s' % (tpcc.constants.TABLENAME_WAREHOUSE, w_id, tpcc.constants.TABLENAME_DISTRICT, d_id)
         d = self.tran.read(d_key)
         assert d
         o_id = d["D_NEXT_O_ID"]
         
         ## WAREHOUSE.W_ID.DISTRICT.D_ID.ORDER_LINE.ORDER_ID -returns-> List of Order Line Objects w/ OL_I_ID
         ##
-        ol_key = '%s.%s.%s.%s.%s' % (constants.TABLENAME_WAREHOUSE, w_id, \
-                                     constants.TABLENAME_DISTRICT, d_id, \
-                                     constants.TABLENAME_ORDER_LINE)
+        ol_key = '%s.%s.%s.%s.%s' % (tpcc.constants.TABLENAME_WAREHOUSE, w_id, \
+                                     tpcc.constants.TABLENAME_DISTRICT, d_id, \
+                                     tpcc.constants.TABLENAME_ORDER_LINE)
 
         orderLines = self.tran.read(ol_key)
         assert orderLines
@@ -1030,8 +1030,8 @@ class ScalarisDriver(AbstractDriver):
         
 
         ## WAREHOUSE.W_ID.STOCK -returns-> List of Stock Objects w/ S_I_ID and S_QUANTITY
-        s_key = '%s.%s.%s' % (constants.TABLENAME_WAREHOUSE, w_id, \
-                                     constants.TABLENAME_STOCK)
+        s_key = '%s.%s.%s' % (tpcc.constants.TABLENAME_WAREHOUSE, w_id, \
+                                     tpcc.constants.TABLENAME_STOCK)
         stocks = self.tran.read(s_key)
         result = len([stock for stock in stocks if stock['S_I_ID'] in ol_ids and stock['S_QUANTITY'] < threshold])
         

@@ -4,7 +4,7 @@ import os
 import logging
 from pprint import pformat
 
-import constants
+import tpcc.constants as constants
 from .abstractdriver import *
 
 try:

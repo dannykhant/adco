@@ -27,8 +27,8 @@
 import logging
 from pprint import pformat
 
-import constants
-from abstractdriver import *
+import tpcc.constants as constants
+from tpcc.drivers.abstractdriver import *
 
 import couchdb
 from uuid import uuid4
@@ -404,7 +404,7 @@ class CouchdbDriver(AbstractDriver):
         # Note, we want to do this cycle ASAP, since we're deleting the 'NEW_ORDER' docs and
         # are very vulnerable to conflicts
         no_o_ids = []
-        for d_id in range(1, constants.DISTRICTS_PER_WAREHOUSE + 1):
+        for d_id in range(1, tpcc.constants.DISTRICTS_PER_WAREHOUSE + 1):
             while True:
                 # fetch any 'NEW_ORDER' doc ('0' as the 'NO_O_ID')
                 newOrder = self.dbs[db_from_table('NEW_ORDER')][self.shard_from_id(w_id)].view('_all_docs', limit = 1,
@@ -570,7 +570,7 @@ class CouchdbDriver(AbstractDriver):
         c_discount = customer_info['C_DISCOUNT']
 
         ol_cnt = len(i_ids)
-        o_carrier_id = constants.NULL_CARRIER_ID
+        o_carrier_id = tpcc.constants.NULL_CARRIER_ID
         order_line_docs = []
 
         ## ----------------
@@ -625,7 +625,7 @@ class CouchdbDriver(AbstractDriver):
                     pass
 
 
-            if i_data.find(constants.ORIGINAL_STRING) != -1 and s_data.find(constants.ORIGINAL_STRING) != -1:
+            if i_data.find(tpcc.constants.ORIGINAL_STRING) != -1 and s_data.find(tpcc.constants.ORIGINAL_STRING) != -1:
                 brand_generic = 'B'
             else:
                 brand_generic = 'G'
@@ -763,11 +763,11 @@ class CouchdbDriver(AbstractDriver):
 
             # Customer Credit Information
             try:
-                if customer['C_CREDIT'] == constants.BAD_CREDIT:
+                if customer['C_CREDIT'] == tpcc.constants.BAD_CREDIT:
                     c_data = customer['C_DATA']
                     newData = " ".join(map(str, [c_id, c_d_id, c_w_id, d_id, w_id, h_amount]))
                     c_data = (newData + "|" + c_data)
-                    if len(c_data) > constants.MAX_C_DATA: c_data = c_data[:constants.MAX_C_DATA]
+                    if len(c_data) > tpcc.constants.MAX_C_DATA: c_data = c_data[:constants.MAX_C_DATA]
                     customer['C_DATA'] = c_data
 
                 customer['C_BALANCE'] = c_balance

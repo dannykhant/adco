@@ -34,14 +34,14 @@ import re
 import argparse
 import glob
 import time 
-import message
+import tpcc.message as message
 import pickle
 import traceback
 from pprint import pprint,pformat
 
-from util import *
-from runtime import *
-import drivers
+from tpcc.util import *
+from tpcc.runtime import *
+import tpcc.drivers as drivers
 
 ## ==============================================
 ## createDriverClass

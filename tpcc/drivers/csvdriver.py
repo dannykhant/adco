@@ -29,7 +29,7 @@ import csv
 from datetime import datetime
 from pprint import pprint,pformat
 
-from abstractdriver import *
+from tpcc.drivers.abstractdriver import *
 
 ## ==============================================
 ## CSVDriver

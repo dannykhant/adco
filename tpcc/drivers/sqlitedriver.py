@@ -37,8 +37,8 @@ import logging
 import commands
 from pprint import pprint,pformat
 
-import constants
-from abstractdriver import *
+import tpcc.constants as constants
+from tpcc.drivers.abstractdriver import *
 
 TXN_QUERIES = {
     "DELIVERY": {
@@ -173,7 +173,7 @@ class SqliteDriver(AbstractDriver):
         ol_delivery_d = params["ol_delivery_d"]
 
         result = [ ]
-        for d_id in range(1, constants.DISTRICTS_PER_WAREHOUSE+1):
+        for d_id in range(1, tpcc.constants.DISTRICTS_PER_WAREHOUSE+1):
             self.cursor.execute(q["getNewOrder"], [d_id, w_id])
             newOrder = self.cursor.fetchone()
             if newOrder == None:
@@ -261,7 +261,7 @@ class SqliteDriver(AbstractDriver):
         ## Insert Order Information
         ## ----------------
         ol_cnt = len(i_ids)
-        o_carrier_id = constants.NULL_CARRIER_ID
+        o_carrier_id = tpcc.constants.NULL_CARRIER_ID
         
         self.cursor.execute(q["incrementNextOrderId"], [d_next_o_id + 1, d_id, w_id])
         self.cursor.execute(q["createOrder"], [d_next_o_id, d_id, w_id, c_id, o_entry_d, o_carrier_id, ol_cnt, all_local])
@@ -307,7 +307,7 @@ class SqliteDriver(AbstractDriver):
 
             self.cursor.execute(q["updateStock"], [s_quantity, s_ytd, s_order_cnt, s_remote_cnt, ol_i_id, ol_supply_w_id])
 
-            if i_data.find(constants.ORIGINAL_STRING) != -1 and s_data.find(constants.ORIGINAL_STRING) != -1:
+            if i_data.find(tpcc.constants.ORIGINAL_STRING) != -1 and s_data.find(tpcc.constants.ORIGINAL_STRING) != -1:
                 brand_generic = 'B'
             else:
                 brand_generic = 'G'
@@ -419,10 +419,10 @@ class SqliteDriver(AbstractDriver):
         self.cursor.execute(q["updateDistrictBalance"], [h_amount, w_id, d_id])
 
         # Customer Credit Information
-        if customer[11] == constants.BAD_CREDIT:
+        if customer[11] == tpcc.constants.BAD_CREDIT:
             newData = " ".join(map(str, [c_id, c_d_id, c_w_id, d_id, w_id, h_amount]))
             c_data = (newData + "|" + c_data)
-            if len(c_data) > constants.MAX_C_DATA: c_data = c_data[:constants.MAX_C_DATA]
+            if len(c_data) > tpcc.constants.MAX_C_DATA: c_data = c_data[:tpcc.constants.MAX_C_DATA]
             self.cursor.execute(q["updateBCCustomer"], [c_balance, c_ytd_payment, c_payment_cnt, c_data, c_w_id, c_d_id, c_id])
         else:
             c_data = ""

@@ -36,9 +36,9 @@ import glob
 import time 
 from pprint import pprint,pformat
 
-from util import *
-from runtime import *
-import drivers
+from tpcc.util import *
+from tpcc.runtime import *
+import tpcc.drivers as drivers
 
 EMPTY = 0
 CMD_LOAD = 1

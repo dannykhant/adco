@@ -34,9 +34,9 @@ import logging
 import commands
 import uuid
 from pprint import pprint,pformat
-import constants
+import tpcc.constants as constants
 
-from abstractdriver import *
+from tpcc.drivers.abstractdriver import *
 ## ==============================================
 ## AbstractDriver
 ## ==============================================
@@ -407,7 +407,7 @@ class CassandraDriver(AbstractDriver):
         
         
         result = [ ]
-        for d_id in range(1, constants.DISTRICTS_PER_WAREHOUSE+1):
+        for d_id in range(1, tpcc.constants.DISTRICTS_PER_WAREHOUSE+1):
             did_expr = create_index_expression('NO_D_ID',str(d_id))
             wid_expr = create_index_expression('NO_W_ID',str(w_id))    
             clause = create_index_clause([did_expr,wid_expr],count=1)
@@ -510,7 +510,7 @@ class CassandraDriver(AbstractDriver):
         customer_info = self.customercf.get(row_key,columns=['C_DISCOUNT','C_LAST','C_CREDIT'])
         c_discount=float(customer_info['C_DISCOUNT'])
         
-        o_carrier_id = constants.NULL_CARRIER_ID
+        o_carrier_id = tpcc.constants.NULL_CARRIER_ID
         ol_cnt = len(i_ids)
     
         #incrementNextOrderId
@@ -572,7 +572,7 @@ class CassandraDriver(AbstractDriver):
             self.stockcf.insert(str(ol_i_id).zfill(5)+str(ol_supply_w_id).zfill(5),{'S_QUANTITY':str(s_quantity), 'S_YTD':str(s_ytd), 'S_ORDER_CNT':str(s_order_cnt) , 'S_REMOTE_CNT':str(s_remote_cnt)})
 
             ##"createOrderLine": "INSERT INTO ORDER_LINE (OL_O_ID, OL_D_ID, OL_W_ID, OL_NUMBER, OL_I_ID, OL_SUPPLY_W_ID, OL_DELIVERY_D, OL_QUANTITY, OL_AMOUNT, OL_DIST_INFO) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", # o_id, d_id, w_id, ol_number, ol_i_id, ol_supply_w_id, ol_quantity, ol_amount, ol_dist_info
-            if i_data.find(constants.ORIGINAL_STRING) != -1 and s_data.find(constants.ORIGINAL_STRING)!= -1:
+            if i_data.find(tpcc.constants.ORIGINAL_STRING) != -1 and s_data.find(tpcc.constants.ORIGINAL_STRING)!= -1:
                 brand_generic = 'B'
             else:
                 brand_generic = 'G'
@@ -647,10 +647,10 @@ class CassandraDriver(AbstractDriver):
         
         self.districtcf.insert(str(d_id).zfill(5)+str(w_id).zfill(5),{'D_YTD': str(float(district['D_YTD'])+h_amount)})
         
-        if c_credit == constants.BAD_CREDIT:
+        if c_credit == tpcc.constants.BAD_CREDIT:
             newData = " ".join(map(str, [c_id, c_d_id, c_w_id, d_id, w_id, h_amount]))
             c_data = (newData + "|" + c_data)
-            if len(c_data) > constants.MAX_C_DATA: c_data = c_data[:constants.MAX_C_DATA]
+            if len(c_data) > tpcc.constants.MAX_C_DATA: c_data = c_data[:tpcc.constants.MAX_C_DATA]
             self.customercf.insert(str(c_id).zfill(5)+str(c_d_id).zfill(5)+str(c_w_id).zfill(5),{ 'C_BALANCE' : str(c_balance), 'C_YTD_PAYMENT':str(c_ytd_payment) , 'C_PAYMENT_CNT':str(c_payment_cnt), 'C_DATA' : str(c_data)})
         else:
             c_data = ""

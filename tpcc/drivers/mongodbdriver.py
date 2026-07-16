@@ -37,18 +37,18 @@ import logging
 import pymongo
 from pprint import pprint,pformat
 
-import constants
-from abstractdriver import *
+import tpcc.constants as constants
+from tpcc.drivers.abstractdriver import *
 
 TABLE_COLUMNS = {
-    constants.TABLENAME_ITEM: [
+    tpcc.constants.TABLENAME_ITEM: [
         "I_ID", # INTEGER
         "I_IM_ID", # INTEGER
         "I_NAME", # VARCHAR
         "I_PRICE", # FLOAT
         "I_DATA", # VARCHAR
     ],
-    constants.TABLENAME_WAREHOUSE: [
+    tpcc.constants.TABLENAME_WAREHOUSE: [
         "W_ID", # SMALLINT
         "W_NAME", # VARCHAR
         "W_STREET_1", # VARCHAR
@@ -59,7 +59,7 @@ TABLE_COLUMNS = {
         "W_TAX", # FLOAT
         "W_YTD", # FLOAT
     ],    
-    constants.TABLENAME_DISTRICT: [
+    tpcc.constants.TABLENAME_DISTRICT: [
         "D_ID", # TINYINT
         "D_W_ID", # SMALLINT
         "D_NAME", # VARCHAR
@@ -72,7 +72,7 @@ TABLE_COLUMNS = {
         "D_YTD", # FLOAT
         "D_NEXT_O_ID", # INT
     ],
-    constants.TABLENAME_CUSTOMER:   [
+    tpcc.constants.TABLENAME_CUSTOMER:   [
         "C_ID", # INTEGER
         "C_D_ID", # TINYINT
         "C_W_ID", # SMALLINT
@@ -95,7 +95,7 @@ TABLE_COLUMNS = {
         "C_DELIVERY_CNT", # INTEGER
         "C_DATA", # VARCHAR
     ],
-    constants.TABLENAME_STOCK:      [
+    tpcc.constants.TABLENAME_STOCK:      [
         "S_I_ID", # INTEGER
         "S_W_ID", # SMALLINT
         "S_QUANTITY", # INTEGER
@@ -114,7 +114,7 @@ TABLE_COLUMNS = {
         "S_REMOTE_CNT", # INTEGER
         "S_DATA", # VARCHAR
     ],
-    constants.TABLENAME_ORDERS:     [
+    tpcc.constants.TABLENAME_ORDERS:     [
         "O_ID", # INTEGER
         "O_C_ID", # INTEGER
         "O_D_ID", # TINYINT
@@ -124,12 +124,12 @@ TABLE_COLUMNS = {
         "O_OL_CNT", # INTEGER
         "O_ALL_LOCAL", # INTEGER
     ],
-    constants.TABLENAME_NEW_ORDER:  [
+    tpcc.constants.TABLENAME_NEW_ORDER:  [
         "NO_O_ID", # INTEGER
         "NO_D_ID", # TINYINT
         "NO_W_ID", # SMALLINT
     ],
-    constants.TABLENAME_ORDER_LINE: [
+    tpcc.constants.TABLENAME_ORDER_LINE: [
         "OL_O_ID", # INTEGER
         "OL_D_ID", # TINYINT
         "OL_W_ID", # SMALLINT
@@ -141,7 +141,7 @@ TABLE_COLUMNS = {
         "OL_AMOUNT", # FLOAT
         "OL_DIST_INFO", # VARCHAR
     ],
-    constants.TABLENAME_HISTORY:    [
+    tpcc.constants.TABLENAME_HISTORY:    [
         "H_C_ID", # INTEGER
         "H_C_D_ID", # TINYINT
         "H_C_W_ID", # SMALLINT
@@ -153,37 +153,37 @@ TABLE_COLUMNS = {
     ],
 }
 TABLE_INDEXES = {
-    constants.TABLENAME_ITEM: [
+    tpcc.constants.TABLENAME_ITEM: [
         "I_ID",
     ],
-    constants.TABLENAME_WAREHOUSE: [
+    tpcc.constants.TABLENAME_WAREHOUSE: [
         "W_ID",
     ],    
-    constants.TABLENAME_DISTRICT: [
+    tpcc.constants.TABLENAME_DISTRICT: [
         "D_ID",
         "D_W_ID",
     ],
-    constants.TABLENAME_CUSTOMER:   [
+    tpcc.constants.TABLENAME_CUSTOMER:   [
         "C_ID",
         "C_D_ID",
         "C_W_ID",
     ],
-    constants.TABLENAME_STOCK:      [
+    tpcc.constants.TABLENAME_STOCK:      [
         "S_I_ID",
         "S_W_ID",
     ],
-    constants.TABLENAME_ORDERS:     [
+    tpcc.constants.TABLENAME_ORDERS:     [
         "O_ID",
         "O_D_ID",
         "O_W_ID",
         "O_C_ID",
     ],
-    constants.TABLENAME_NEW_ORDER:  [
+    tpcc.constants.TABLENAME_NEW_ORDER:  [
         "NO_O_ID",
         "NO_D_ID",
         "NO_W_ID",
     ],
-    constants.TABLENAME_ORDER_LINE: [
+    tpcc.constants.TABLENAME_ORDER_LINE: [
         "OL_O_ID",
         "OL_D_ID",
         "OL_W_ID",
@@ -201,10 +201,10 @@ class MongodbDriver(AbstractDriver):
         "denormalize":  ("If set to true, then the CUSTOMER data will be denormalized into a single document", True),
     }
     DENORMALIZED_TABLES = [
-        constants.TABLENAME_CUSTOMER,
-        constants.TABLENAME_ORDERS,
-        constants.TABLENAME_ORDER_LINE,
-        constants.TABLENAME_HISTORY,
+        tpcc.constants.TABLENAME_CUSTOMER,
+        tpcc.constants.TABLENAME_ORDERS,
+        tpcc.constants.TABLENAME_ORDER_LINE,
+        tpcc.constants.TABLENAME_HISTORY,
     ]
     
     
@@ -217,7 +217,7 @@ class MongodbDriver(AbstractDriver):
         self.w_orders = { }
         
         ## Create member mapping to collections
-        for name in constants.ALL_TABLES:
+        for name in tpcc.constants.ALL_TABLES:
             self.__dict__[name.lower()] = None
     
     ## ----------------------------------------------
@@ -240,7 +240,7 @@ class MongodbDriver(AbstractDriver):
         
         if config["reset"]:
             logging.debug("Deleting database '%s'" % self.database.name)
-            for name in constants.ALL_TABLES:
+            for name in tpcc.constants.ALL_TABLES:
                 if name in self.database.collection_names():
                     self.database.drop_collection(name)
                     logging.debug("Dropped collection %s" % name)
@@ -249,7 +249,7 @@ class MongodbDriver(AbstractDriver):
         ## Setup!
         load_indexes = ('execute' in config and not config['execute']) and \
                        ('load' in config and not config['load'])
-        for name in constants.ALL_TABLES:
+        for name in tpcc.constants.ALL_TABLES:
             if self.denormalize and name in MongodbDriver.DENORMALIZED_TABLES[1:]: continue
             
             ## Create member mapping to collections
@@ -280,7 +280,7 @@ class MongodbDriver(AbstractDriver):
         ## into a single document
         if self.denormalize and tableName in MongodbDriver.DENORMALIZED_TABLES:
             ## If this is the CUSTOMER table, then we'll just store the record locally for now
-            if tableName == constants.TABLENAME_CUSTOMER:
+            if tableName == tpcc.constants.TABLENAME_CUSTOMER:
                 for t in tuples:
                     key = tuple(t[:3]) # C_ID, D_ID, W_ID
                     self.w_customers[key] = dict(map(lambda i: (columns[i], t[i]), num_columns))
@@ -288,14 +288,14 @@ class MongodbDriver(AbstractDriver):
                 
             ## If this is an ORDER_LINE record, then we need to stick it inside of the 
             ## right ORDERS record
-            elif tableName == constants.TABLENAME_ORDER_LINE:
+            elif tableName == tpcc.constants.TABLENAME_ORDER_LINE:
                 for t in tuples:
                     o_key = tuple(t[:3]) # O_ID, O_D_ID, O_W_ID
                     (c_key, o_idx) = self.w_orders[o_key]
                     c = self.w_customers[c_key]
                     assert o_idx >= 0
-                    assert o_idx < len(c[constants.TABLENAME_ORDERS])
-                    o = c[constants.TABLENAME_ORDERS][o_idx]
+                    assert o_idx < len(c[tpcc.constants.TABLENAME_ORDERS])
+                    o = c[tpcc.constants.TABLENAME_ORDERS][o_idx]
                     if not tableName in o: o[tableName] = [ ]
                     o[tableName].append(dict(map(lambda i: (columns[i], t[i]), num_columns[4:])))
                 ## FOR
@@ -303,7 +303,7 @@ class MongodbDriver(AbstractDriver):
             ## Otherwise we have to find the CUSTOMER record for the other tables
             ## and append ourselves to them
             else:
-                if tableName == constants.TABLENAME_ORDERS:
+                if tableName == tpcc.constants.TABLENAME_ORDERS:
                     key_start = 1
                     cols = num_columns[0:1] + num_columns[4:] # Removes O_C_ID, O_D_ID, O_W_ID
                 else:
@@ -320,7 +320,7 @@ class MongodbDriver(AbstractDriver):
                     
                     ## Since ORDER_LINE doesn't have a C_ID, we have to store a reference to
                     ## this ORDERS record so that we can look it up later
-                    if tableName == constants.TABLENAME_ORDERS:
+                    if tableName == tpcc.constants.TABLENAME_ORDERS:
                         o_key = (t[0], t[2], t[3]) # O_ID, O_D_ID, O_W_ID
                         self.w_orders[o_key] = (c_key, len(c[tableName])-1) # CUSTOMER, ORDER IDX
                 ## FOR
@@ -342,7 +342,7 @@ class MongodbDriver(AbstractDriver):
     def loadFinishDistrict(self, w_id, d_id):
         if self.denormalize:
             logging.debug("Pushing %d denormalized CUSTOMER records for WAREHOUSE %d DISTRICT %d into MongoDB" % (len(self.w_customers), w_id, d_id))
-            self.database[constants.TABLENAME_CUSTOMER].insert(self.w_customers.values())
+            self.database[tpcc.constants.TABLENAME_CUSTOMER].insert(self.w_customers.values())
             self.w_customers.clear()
             self.w_orders.clear()
         ## IF
@@ -353,7 +353,7 @@ class MongodbDriver(AbstractDriver):
     def loadFinish(self):
         logging.info("Finished loading tables")
         if logging.getLogger().isEnabledFor(logging.DEBUG):
-            for name in constants.ALL_TABLES:
+            for name in tpcc.constants.ALL_TABLES:
                 if self.denormalize and name in MongodbDriver.DENORMALIZED_TABLES[1:]: continue
                 logging.debug("%-12s%d records" % (name+":", self.database[name].count()))
         ## IF
@@ -367,7 +367,7 @@ class MongodbDriver(AbstractDriver):
         ol_delivery_d = params["ol_delivery_d"]
         
         result = [ ]
-        for d_id in range(1, constants.DISTRICTS_PER_WAREHOUSE+1):
+        for d_id in range(1, tpcc.constants.DISTRICTS_PER_WAREHOUSE+1):
             ## getNewOrder
             no = self.new_order.find_one({"NO_D_ID": d_id, "NO_W_ID": w_id}, {"NO_O_ID": 1})
             if no == None:
@@ -494,14 +494,14 @@ class MongodbDriver(AbstractDriver):
         ## Insert Order Information
         ## ----------------
         ol_cnt = len(i_ids)
-        o_carrier_id = constants.NULL_CARRIER_ID
+        o_carrier_id = tpcc.constants.NULL_CARRIER_ID
 
         # createNewOrder
         self.new_order.insert({"NO_O_ID": d_next_o_id, "NO_D_ID": d_id, "NO_W_ID": w_id})
 
         o = {"O_ID": d_next_o_id, "O_ENTRY_D": o_entry_d, "O_CARRIER_ID": o_carrier_id, "O_OL_CNT": ol_cnt, "O_ALL_LOCAL": all_local}
         if self.denormalize:
-            o[constants.TABLENAME_ORDER_LINE] = [ ]
+            o[tpcc.constants.TABLENAME_ORDER_LINE] = [ ]
         else:
             o["O_D_ID"] = d_id
             o["O_W_ID"] = w_id
@@ -569,7 +569,7 @@ class MongodbDriver(AbstractDriver):
             # updateStock
             self.stock.update(si, {"$set": {"S_QUANTITY": s_quantity, "S_YTD": s_ytd, "S_ORDER_CNT": s_order_cnt, "S_REMOTE_CNT": s_remote_cnt}})
 
-            if i_data.find(constants.ORIGINAL_STRING) != -1 and s_data.find(constants.ORIGINAL_STRING) != -1:
+            if i_data.find(tpcc.constants.ORIGINAL_STRING) != -1 and s_data.find(tpcc.constants.ORIGINAL_STRING) != -1:
                 brand_generic = 'B'
             else:
                 brand_generic = 'G'
@@ -581,7 +581,7 @@ class MongodbDriver(AbstractDriver):
 
             if self.denormalize:
                 # createOrderLine
-                o[constants.TABLENAME_ORDER_LINE].append(ol)
+                o[tpcc.constants.TABLENAME_ORDER_LINE].append(ol)
             else:
                 ol["OL_D_ID"] = d_id
                 ol["OL_W_ID"] = w_id
@@ -624,9 +624,9 @@ class MongodbDriver(AbstractDriver):
         return_fields = {"C_ID": 1, "C_FIRST": 1, "C_MIDDLE": 1, "C_LAST": 1, "C_BALANCE": 1}
         if self.denormalize:
             for f in ['O_ID', 'O_CARRIER_ID', 'O_ENTRY_D']:
-                return_fields["%s.%s" % (constants.TABLENAME_ORDERS, f)] = 1
+                return_fields["%s.%s" % (tpcc.constants.TABLENAME_ORDERS, f)] = 1
             for f in ['OL_SUPPLY_W_ID', 'OL_I_ID', 'OL_QUANTITY']:
-                return_fields["%s.%s.%s" % (constants.TABLENAME_ORDERS, constants.TABLENAME_ORDER_LINE, f)] = 1
+                return_fields["%s.%s.%s" % (tpcc.constants.TABLENAME_ORDERS, tpcc.constants.TABLENAME_ORDER_LINE, f)] = 1
         ## IF
         
         if c_id != None:
@@ -654,10 +654,10 @@ class MongodbDriver(AbstractDriver):
         
         if self.denormalize:
             # getLastOrder
-            if constants.TABLENAME_ORDERS in c:
-                order = c[constants.TABLENAME_ORDERS][-1]
+            if tpcc.constants.TABLENAME_ORDERS in c:
+                order = c[tpcc.constants.TABLENAME_ORDERS][-1]
                 # getOrderLines
-                orderLines = order[constants.TABLENAME_ORDER_LINE]
+                orderLines = order[tpcc.constants.TABLENAME_ORDER_LINE]
         else:
             # getLastOrder
             order = self.orders.find({"O_W_ID": w_id, "O_D_ID": d_id, "O_C_ID": c_id}, {"O_ID": 1, "O_CARRIER_ID": 1, "O_ENTRY_D": 1}).sort("O_ID", direction=pymongo.DESCENDING).limit(1)[0]
@@ -740,10 +740,10 @@ class MongodbDriver(AbstractDriver):
         customer_update = {"$inc": {"C_BALANCE": h_amount*-1, "C_YTD_PAYMENT": h_amount, "C_PAYMENT_CNT": 1}}
         
         # Customer Credit Information
-        if c["C_CREDIT"] == constants.BAD_CREDIT:
+        if c["C_CREDIT"] == tpcc.constants.BAD_CREDIT:
             newData = " ".join(map(str, [c_id, c_d_id, c_w_id, d_id, w_id, h_amount]))
             c_data = (newData + "|" + c_data)
-            if len(c_data) > constants.MAX_C_DATA: c_data = c_data[:constants.MAX_C_DATA]
+            if len(c_data) > tpcc.constants.MAX_C_DATA: c_data = c_data[:tpcc.constants.MAX_C_DATA]
             customer_update["$set"] = {"C_DATA": c_data}
         ## IF
 
@@ -752,7 +752,7 @@ class MongodbDriver(AbstractDriver):
         h = {"H_D_ID": d_id, "H_W_ID": w_id, "H_DATE": h_date, "H_AMOUNT": h_amount, "H_DATA": h_data}
         if self.denormalize:
             # insertHistory + updateCustomer
-            customer_update["$push"] = {constants.TABLENAME_HISTORY: h}
+            customer_update["$push"] = {tpcc.constants.TABLENAME_HISTORY: h}
             self.customer.update({"_id": c["_id"]}, customer_update)
         else:
             # updateCustomer

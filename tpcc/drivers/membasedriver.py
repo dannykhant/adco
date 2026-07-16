@@ -33,14 +33,14 @@ import commands
 import memcache
 from pprint import pprint,pformat
 
-import constants
-from abstractdriver import *
+import tpcc.constants as constants
+from tpcc.drivers.abstractdriver import *
 MAX_CUSTOMER_ID = 3000
 MAX_ORDER_ID = 2999
 
 # Appended with number of columns that needs to be used as the key
 TABLE_COLUMNS = {
-    constants.TABLENAME_ITEM: [
+    tpcc.constants.TABLENAME_ITEM: [
         "I_ID", # INTEGER
         "I_IM_ID", # INTEGER
         "I_NAME", # VARCHAR
@@ -48,7 +48,7 @@ TABLE_COLUMNS = {
         "I_DATA", # VARCHAR
         1
     ],
-    constants.TABLENAME_WAREHOUSE: [
+    tpcc.constants.TABLENAME_WAREHOUSE: [
         "W_ID", # SMALLINT
         "W_NAME", # VARCHAR
         "W_STREET_1", # VARCHAR
@@ -60,7 +60,7 @@ TABLE_COLUMNS = {
         "W_YTD", # FLOAT
         1
     ],
-    constants.TABLENAME_DISTRICT: [
+    tpcc.constants.TABLENAME_DISTRICT: [
         "D_ID", # TINYINT
         "D_W_ID", # SMALLINT
         "D_NAME", # VARCHAR
@@ -74,7 +74,7 @@ TABLE_COLUMNS = {
         "D_NEXT_O_ID", # INT
         2
     ],
-    constants.TABLENAME_CUSTOMER: [
+    tpcc.constants.TABLENAME_CUSTOMER: [
         "C_ID", # INTEGER
         "C_D_ID", # TINYINT
         "C_W_ID", # SMALLINT
@@ -98,7 +98,7 @@ TABLE_COLUMNS = {
         "C_DATA", # VARCHAR
         3
     ],
-    constants.TABLENAME_STOCK: [
+    tpcc.constants.TABLENAME_STOCK: [
         "S_I_ID", # INTEGER
         "S_W_ID", # SMALLINT
         "S_QUANTITY", # INTEGER
@@ -118,7 +118,7 @@ TABLE_COLUMNS = {
         "S_DATA", # VARCHAR
         2
     ],
-    constants.TABLENAME_ORDERS: [
+    tpcc.constants.TABLENAME_ORDERS: [
         "O_ID", # INTEGER
         "O_C_ID", # INTEGER
         "O_D_ID", # TINYINT
@@ -136,13 +136,13 @@ TABLE_COLUMNS = {
         "O_ID", # VARCHAR
         3
     ],
-    constants.TABLENAME_NEW_ORDER: [
+    tpcc.constants.TABLENAME_NEW_ORDER: [
         "NO_O_ID", # INTEGER
         "NO_D_ID", # TINYINT
         "NO_W_ID", # SMALLINT
         3
     ],
-    constants.TABLENAME_ORDER_LINE: [
+    tpcc.constants.TABLENAME_ORDER_LINE: [
         "OL_O_ID", # INTEGER
         "OL_D_ID", # TINYINT
         "OL_W_ID", # SMALLINT
@@ -155,7 +155,7 @@ TABLE_COLUMNS = {
         "OL_DIST_INFO", # VARCHAR
         3
     ],
-    constants.TABLENAME_HISTORY: [
+    tpcc.constants.TABLENAME_HISTORY: [
         "H_C_ID", # INTEGER
         "H_C_D_ID", # TINYINT
         "H_C_W_ID", # SMALLINT
@@ -357,7 +357,7 @@ class MembaseDriver(AbstractDriver):
         
         result = [ ]
         ol_total =0
-        for d_id in range(1, constants.DISTRICTS_PER_WAREHOUSE+1):
+        for d_id in range(1, tpcc.constants.DISTRICTS_PER_WAREHOUSE+1):
         
             #-------------------------------------------------------------------------------------
             # The row in the NEW-ORDER table with matching NO_W_ID (equals W_ID) and NO_D_ID (equals D_ID) 
@@ -523,7 +523,7 @@ class MembaseDriver(AbstractDriver):
         if all_local:
             o_all_local = 1;
         ol_cnt = len(i_ids)
-        o_carrier_id = constants.NULL_CARRIER_ID
+        o_carrier_id = tpcc.constants.NULL_CARRIER_ID
         value = [o_entry_d, o_carrier_id, ol_cnt, all_local]
         self.conn.set("ORDERS_"+str(d_next_o_id)+"_"+str(c_id)+"_"+str(d_id)+"_"+str(w_id), value)
 
@@ -585,7 +585,7 @@ class MembaseDriver(AbstractDriver):
             
             self.conn.set("STOCK_"+str(idx)+"_"+str(ol_supply_w_id), updated_stock);
             
-            if i_data.find(constants.ORIGINAL_STRING) != -1 and s_data.find(constants.ORIGINAL_STRING) != -1:
+            if i_data.find(tpcc.constants.ORIGINAL_STRING) != -1 and s_data.find(tpcc.constants.ORIGINAL_STRING) != -1:
                 brand_generic = 'B'
             else:
                 brand_generic = 'G'
@@ -786,10 +786,10 @@ class MembaseDriver(AbstractDriver):
         columns = TABLE_COLUMNS["CUSTOMER"]
         credit_index = columns.index("C_CREDIT")
 
-        if(customer[credit_index] == constants.BAD_CREDIT):
+        if(customer[credit_index] == tpcc.constants.BAD_CREDIT):
             newData = " ".join(map(str, [c_id, c_d_id, c_w_id, d_id, w_id, h_amount]))
             c_data = (newData + "|" + c_data)
-            if len(c_data) > constants.MAX_C_DATA: c_data = c_data[:constants.MAX_C_DATA]
+            if len(c_data) > tpcc.constants.MAX_C_DATA: c_data = c_data[:tpcc.constants.MAX_C_DATA]
         
             updated_customer = self.update_single_record("C_DATA", c_data, updated_customer,"CUSTOMER")
                             

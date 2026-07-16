@@ -1,7 +1,7 @@
 import os, redis, time, sys
 from datetime import datetime
 from pprint import pprint,pformat
-from abstractdriver import *
+from tpcc.drivers.abstractdriver import *
 
 #----------------------------------------------------------------------------
 # Redis TPC-C Driver
@@ -363,7 +363,7 @@ class RedisDriver(AbstractDriver):
 		customer_key = [ ]
 		ol_counts = [ ]
 		no_o_id = [ ]
-		for d_id in range(1, constants.DISTRICTS_PER_WAREHOUSE + 1) :
+		for d_id in range(1, tpcc.constants.DISTRICTS_PER_WAREHOUSE + 1) :
 			order_key.append(None)
 			ol_total.append(0)
 			customer_key.append(None)
@@ -372,14 +372,14 @@ class RedisDriver(AbstractDriver):
 		#---------------------
 		# Get New Order Query
 		#---------------------
-		for d_id in range(1, constants.DISTRICTS_PER_WAREHOUSE + 1) :
+		for d_id in range(1, tpcc.constants.DISTRICTS_PER_WAREHOUSE + 1) :
 			cursor = d_id - 1
 			# Get set of possible new order ids
 			index_key = self.safeKey([d_id, w_id])
 			rdr.srandmember('NEW_ORDER.INDEXES.GETNEWORDER.' + index_key)
 		id_set = rdr.execute()
 		
-		for d_id in range(1, constants.DISTRICTS_PER_WAREHOUSE + 1) :	
+		for d_id in range(1, tpcc.constants.DISTRICTS_PER_WAREHOUSE + 1) :	
 			cursor = d_id - 1
 			if id_set[cursor] == None :
 				rdr.get('NULL_VALUE')
@@ -394,7 +394,7 @@ class RedisDriver(AbstractDriver):
 		#-----------------------
 		# Get Customer ID Query
 		#-----------------------
-		for d_id in range(1, constants.DISTRICTS_PER_WAREHOUSE + 1) :	
+		for d_id in range(1, tpcc.constants.DISTRICTS_PER_WAREHOUSE + 1) :	
 			cursor = d_id - 1
 			if no_o_id[cursor] == None :
 				order_key.insert(cursor, 'NO_KEY')
@@ -406,7 +406,7 @@ class RedisDriver(AbstractDriver):
 			rdr.hget('ORDERS.' + order_key[cursor], 'O_C_ID')
 		c_id = rdr.execute()
 		
-		for d_id in range(1, constants.DISTRICTS_PER_WAREHOUSE + 1) :	
+		for d_id in range(1, tpcc.constants.DISTRICTS_PER_WAREHOUSE + 1) :	
 			cursor = d_id - 1
 			if no_o_id[cursor] == None or c_id[cursor] == None :
 				si_key = 'NO_KEY'
@@ -422,7 +422,7 @@ class RedisDriver(AbstractDriver):
 		#-----------------------------
 		# Sum Order Line Amount Query
 		#-----------------------------
-		for d_id in range(1, constants.DISTRICTS_PER_WAREHOUSE + 1) :	
+		for d_id in range(1, tpcc.constants.DISTRICTS_PER_WAREHOUSE + 1) :	
 			cursor = d_id - 1
 			if no_o_id[cursor] == None or c_id[cursor] == None :
 				rdr.get('NULL_VALUE')
@@ -447,7 +447,7 @@ class RedisDriver(AbstractDriver):
 			print 'Sum Order Line Query:', time.time() - t0
 			t0 = time.time()
 				
-		for d_id in range(1, constants.DISTRICTS_PER_WAREHOUSE + 1) :	
+		for d_id in range(1, tpcc.constants.DISTRICTS_PER_WAREHOUSE + 1) :	
 			cursor = d_id - 1
 			if no_o_id[cursor] == None or c_id[cursor] == None :
 				## No orders for this district: skip it. 
@@ -497,7 +497,7 @@ class RedisDriver(AbstractDriver):
 		#-----------------------
 		# Update Customer Query
 		#-----------------------
-		for d_id in range(1, constants.DISTRICTS_PER_WAREHOUSE + 1) :	
+		for d_id in range(1, tpcc.constants.DISTRICTS_PER_WAREHOUSE + 1) :	
 			cursor = d_id - 1
 			if no_o_id[cursor] == None or c_id[cursor] == None :
 				rdr.get('NULL_VALUE')
@@ -510,7 +510,7 @@ class RedisDriver(AbstractDriver):
 				rdr.hget('CUSTOMER.' + customer_key[cursor], 'C_BALANCE')
 		old_balance = rdr.execute()
 		
-		for d_id in range(1, constants.DISTRICTS_PER_WAREHOUSE + 1) :
+		for d_id in range(1, tpcc.constants.DISTRICTS_PER_WAREHOUSE + 1) :
 			cursor = d_id - 1
 			if no_o_id[cursor] == None or c_id[cursor] == None :
 				continue
@@ -645,7 +645,7 @@ class RedisDriver(AbstractDriver):
 		# Insert Order Information
 		#--------------------------
 		ol_cnt = len(i_ids)
-		o_carrier_id = constants.NULL_CARRIER_ID
+		o_carrier_id = tpcc.constants.NULL_CARRIER_ID
 		order_key = self.safeKey([w_id, d_id, d_next_o_id])
 		new_order_key = self.safeKey([d_next_o_id, w_id, d_id])
 		
@@ -778,7 +778,7 @@ class RedisDriver(AbstractDriver):
 				}
 			)
 						
-			if i_data[index].find(constants.ORIGINAL_STRING) != -1 and s_data.find(constants.ORIGINAL_STRING) != -1:
+			if i_data[index].find(tpcc.constants.ORIGINAL_STRING) != -1 and s_data.find(tpcc.constants.ORIGINAL_STRING) != -1:
 				brand_generic = 'B'
 			else:
 				brand_generic = 'G'
@@ -1124,7 +1124,7 @@ class RedisDriver(AbstractDriver):
 			print 'Update District Balance Query:', time.time() - t0
 			t0 = time.time()
 			
-		if customer['C_CREDIT'] == constants.BAD_CREDIT:
+		if customer['C_CREDIT'] == tpcc.constants.BAD_CREDIT:
 			#----------------------------------
 			# Update Bad Credit Customer Query
 			#----------------------------------
@@ -1136,8 +1136,8 @@ class RedisDriver(AbstractDriver):
 			)
 			
 			c_data = (newData + "|" + c_data)
-			if len(c_data) > constants.MAX_C_DATA : 
-				c_data = c_data[:constants.MAX_C_DATA]
+			if len(c_data) > tpcc.constants.MAX_C_DATA : 
+				c_data = c_data[:tpcc.constants.MAX_C_DATA]
 			
 			wtr.hmset(
 				'CUSTOMER.' + customer_key,

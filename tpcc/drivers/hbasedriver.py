@@ -35,13 +35,13 @@
 # OTHER DEALINGS IN THE SOFTWARE.
 # -----------------------------------------------------------------------
 import uuid
-import constants
+import tpcc.constants as constants
 from java.lang import Integer, Float, String
 from org.apache.hadoop.hbase import HBaseConfiguration, HTableDescriptor, HColumnDescriptor
 from org.apache.hadoop.hbase.client import HBaseAdmin, HTable, Put, Get, Scan, Delete, Result, ResultScanner
 from org.apache.hadoop.hbase.util import Bytes
 from org.apache.hadoop.hbase.filter import PrefixFilter
-from abstractdriver import AbstractDriver
+from tpcc.drivers.abstractdriver import AbstractDriver
 from pprint import pprint,pformat
 
 

@@ -27,6 +27,9 @@
 
 import sys
 import os
+# Add the project root to sys.path so that absolute imports of tpcc package work
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 import string
 import datetime
 import logging
@@ -38,9 +41,9 @@ import multiprocessing
 from configparser import ConfigParser
 from pprint import pprint,pformat
 
-from util import *
-from runtime import *
-import drivers
+from tpcc.util import *
+from tpcc.runtime import *
+import tpcc.drivers as drivers
 
 logging.basicConfig(level = logging.INFO,
                     format="%(asctime)s [%(funcName)s:%(lineno)03d] %(levelname)-5s: %(message)s",
@@ -52,7 +55,7 @@ logging.basicConfig(level = logging.INFO,
 ## ==============================================
 def createDriverClass(name):
     full_name = "%sDriver" % name.title()
-    mod = __import__('drivers.%s' % full_name.lower(), globals(), locals(), [full_name])
+    mod = __import__('tpcc.drivers.%s' % full_name.lower(), globals(), locals(), [full_name])
     klass = getattr(mod, full_name)
     return klass
 ## DEF

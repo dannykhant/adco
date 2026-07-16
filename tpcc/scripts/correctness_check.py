@@ -14,13 +14,19 @@ Usage:
 """
 import sys
 import os
+# Add the project root to sys.path so that absolute imports of tpcc package work
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+
+TPCC_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+DDL_PATH = os.path.join(TPCC_DIR, "tpcc.sql")
+
 import logging
 import argparse
 import random as rng
 from datetime import datetime
 from copy import deepcopy
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from tpcc.util import nurand, rand
 
 logging.basicConfig(
     level=logging.INFO,
@@ -30,7 +36,7 @@ logging.basicConfig(
 )
 
 from tpcc import createDriverClass, startLoading
-from util import scaleparameters, rand, nurand
+from tpcc.util import scaleparameters
 
 DRIVERS = ['baselinemysql', 'deepseekv4flashmysql', 'deepseekv4flashmysqlv2']
 
@@ -39,10 +45,18 @@ def parse_config(config_path, section):
     from configparser import ConfigParser
     cparser = ConfigParser()
 
-    candidates = [os.path.realpath(config_path)]
+    script_dir = os.path.dirname(os.path.realpath(__file__))
+    tpcc_dir = os.path.dirname(script_dir)
+    project_root = os.path.dirname(tpcc_dir)
     base = os.path.basename(config_path)
-    if not config_path.startswith('configs/'):
-        candidates.append(os.path.realpath(os.path.join('configs', base)))
+
+    candidates = [
+        os.path.realpath(config_path),
+        os.path.realpath(os.path.join(project_root, config_path)),
+        os.path.realpath(os.path.join(tpcc_dir, config_path)),
+        os.path.realpath(os.path.join(tpcc_dir, 'configs', base)),
+        os.path.realpath(os.path.join(project_root, 'tpcc', config_path)),
+    ]
 
     for path in candidates:
         if os.path.exists(path):
@@ -61,7 +75,7 @@ def parse_config(config_path, section):
 
 def load_database(driver_name, config, scale_params):
     driver_class = createDriverClass(driver_name)
-    driver = driver_class("tpcc.sql")
+    driver = driver_class(DDL_PATH)
 
     cfg = deepcopy(config)
     cfg['reset'] = True
@@ -71,7 +85,7 @@ def load_database(driver_name, config, scale_params):
     driver.loadConfig(cfg)
     logging.info("Loading data for %s..." % driver_name)
 
-    from runtime import loader
+    from tpcc.runtime import loader
     l = loader.Loader(driver, scale_params,
                       range(scale_params.starting_warehouse, scale_params.ending_warehouse + 1), True)
     driver.loadStart()
@@ -86,7 +100,7 @@ def load_database(driver_name, config, scale_params):
 def connect_driver(driver_name, config):
     import MySQLdb as mysql
     driver_class = createDriverClass(driver_name)
-    driver = driver_class("tpcc.sql")
+    driver = driver_class(DDL_PATH)
     driver.host = str(config["host"])
     driver.port = int(config["port"])
     driver.user = str(config["user"])
@@ -183,7 +197,7 @@ def main():
     logging.info("Recording %d transactions from baseline..." % args.transactions)
     recorded = []
     for i in range(args.transactions):
-        from runtime.executor import Executor
+        from tpcc.runtime.executor import Executor
         executor = Executor(baseline, scale_params)
         txn, params = executor.doOne()
         result = baseline.executeTransaction(txn, params)

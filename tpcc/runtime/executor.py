@@ -38,8 +38,8 @@ import logging
 from datetime import datetime
 from pprint import pprint,pformat
 
-import constants
-from util import *
+import tpcc.constants as constants
+from tpcc.util import *
 
 
 class Executor:

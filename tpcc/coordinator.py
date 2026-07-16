@@ -36,14 +36,14 @@ import glob
 import time
 import pickle
 import execnet
-import worker
-import message
+import tpcc.worker as worker
+import tpcc.message as message
 from ConfigParser import SafeConfigParser
 from pprint import pprint,pformat
 
-from util import *
-from runtime import *
-import drivers
+from tpcc.util import *
+from tpcc.runtime import *
+import tpcc.drivers as drivers
 
 logging.basicConfig(level = logging.INFO,
                     format="%(asctime)s [%(funcName)s:%(lineno)03d] %(levelname)-5s: %(message)s",

@@ -25,25 +25,25 @@
 # -----------------------------------------------------------------------
 
 from __future__ import with_statement
-from abstractdriver import *
+from tpcc.drivers.abstractdriver import *
 from pprint import pprint, pformat
 from pyrant import protocol
 
-import constants
+import tpcc.constants as constants
 import logging
 import os
 import pyrant
 import sys
 
 TABLE_COLUMNS = {
-	constants.TABLENAME_ITEM: [
+	tpcc.constants.TABLENAME_ITEM: [
 		"I_ID", # INTEGER
 		"I_IM_ID", # INTEGER
 		"I_NAME", # VARCHAR
 		"I_PRICE", # FLOAT
 		"I_DATA", # VARCHAR
 	],
-	constants.TABLENAME_WAREHOUSE: [
+	tpcc.constants.TABLENAME_WAREHOUSE: [
 		"W_ID", # SMALLINT
 		"W_NAME", # VARCHAR
 		"W_STREET_1", # VARCHAR
@@ -54,7 +54,7 @@ TABLE_COLUMNS = {
 		"W_TAX", # FLOAT
 		"W_YTD", # FLOAT
 	],
-	constants.TABLENAME_DISTRICT: [
+	tpcc.constants.TABLENAME_DISTRICT: [
 		"D_ID", # TINYINT
 		"D_W_ID", # SMALLINT
 		"D_NAME", # VARCHAR
@@ -67,7 +67,7 @@ TABLE_COLUMNS = {
 		"D_YTD", # FLOAT
 		"D_NEXT_O_ID", # INT
 	],
-	constants.TABLENAME_CUSTOMER: [
+	tpcc.constants.TABLENAME_CUSTOMER: [
 		"C_ID", # INTEGER
 		"C_D_ID", # TINYINT
 		"C_W_ID", # SMALLINT
@@ -90,7 +90,7 @@ TABLE_COLUMNS = {
 		"C_DELIVERY_CNT", # INTEGER
 		"C_DATA", # VARCHAR
 	],
-	constants.TABLENAME_STOCK: [
+	tpcc.constants.TABLENAME_STOCK: [
 		"S_I_ID", # INTEGER
 		"S_W_ID", # SMALLINT
 		"S_QUANTITY", # INTEGER
@@ -109,7 +109,7 @@ TABLE_COLUMNS = {
 		"S_REMOTE_CNT", # INTEGER
 		"S_DATA", # VARCHAR
 	],
-	constants.TABLENAME_ORDERS: [
+	tpcc.constants.TABLENAME_ORDERS: [
 		"O_ID", # INTEGER
 		"O_C_ID", # INTEGER
 		"O_D_ID", # TINYINT
@@ -119,12 +119,12 @@ TABLE_COLUMNS = {
 		"O_OL_CNT", # INTEGER
 		"O_ALL_LOCAL", # INTEGER
 	],
-	constants.TABLENAME_NEW_ORDER: [
+	tpcc.constants.TABLENAME_NEW_ORDER: [
 		"NO_O_ID", # INTEGER
 		"NO_D_ID", # TINYINT
 		"NO_W_ID", # SMALLINT
 	],
-	constants.TABLENAME_ORDER_LINE: [
+	tpcc.constants.TABLENAME_ORDER_LINE: [
 		"OL_O_ID", # INTEGER
 		"OL_D_ID", # TINYINT
 		"OL_W_ID", # SMALLINT
@@ -136,7 +136,7 @@ TABLE_COLUMNS = {
 		"OL_AMOUNT", # FLOAT
 		"OL_DIST_INFO", # VARCHAR
 	],
-	constants.TABLENAME_HISTORY: [
+	tpcc.constants.TABLENAME_HISTORY: [
 		"H_C_ID", # INTEGER
 		"H_C_D_ID", # TINYINT
 		"H_C_W_ID", # SMALLINT
@@ -148,37 +148,37 @@ TABLE_COLUMNS = {
 	],
 }
 TABLE_INDEXES = {
-	constants.TABLENAME_ITEM: [
+	tpcc.constants.TABLENAME_ITEM: [
 		"I_ID",
 	],
-	constants.TABLENAME_WAREHOUSE: [
+	tpcc.constants.TABLENAME_WAREHOUSE: [
 		"W_ID",
 	],
-	constants.TABLENAME_DISTRICT: [
+	tpcc.constants.TABLENAME_DISTRICT: [
 		"D_ID",
 		"D_W_ID",
 	],
-	constants.TABLENAME_CUSTOMER: [
+	tpcc.constants.TABLENAME_CUSTOMER: [
 		"C_ID",
 		"C_D_ID",
 		"C_W_ID",
 	],
-	constants.TABLENAME_STOCK: [
+	tpcc.constants.TABLENAME_STOCK: [
 		"S_I_ID",
 		"S_W_ID",
 	],
-	constants.TABLENAME_ORDERS: [
+	tpcc.constants.TABLENAME_ORDERS: [
 		"O_ID",
 		"O_D_ID",
 		"O_W_ID",
 		"O_C_ID",
 	],
-	constants.TABLENAME_NEW_ORDER: [
+	tpcc.constants.TABLENAME_NEW_ORDER: [
 		"NO_O_ID",
 		"NO_D_ID",
 		"NO_W_ID",
 	],
-	constants.TABLENAME_ORDER_LINE: [
+	tpcc.constants.TABLENAME_ORDER_LINE: [
 		"OL_O_ID",
 		"OL_D_ID",
 		"OL_W_ID",
@@ -199,15 +199,15 @@ class TokyocabinetDriver(AbstractDriver):
 	## Tyrant server
 
 	DEFAULT_CONFIG = { "servers": ("Tokyo Tyrant server configuration", '{ 0: { "' + 
-		constants.TABLENAME_ITEM + '":{ "host": "localhost", "port": 1978, },"' +
-		constants.TABLENAME_WAREHOUSE + '" : { "host": "localhost", "port": 1979, },"' +
-		constants.TABLENAME_DISTRICT + '" : { "host": "localhost", "port": 1980, },"' +
-		constants.TABLENAME_CUSTOMER + '" : { "host": "localhost", "port": 1981, },"' +
-		constants.TABLENAME_STOCK + '" : { "host": "localhost", "port": 1982, },"' +
-		constants.TABLENAME_ORDERS + '" : { "host": "localhost", "port": 1983, },"' +
-		constants.TABLENAME_NEW_ORDER + '" : { "host": "localhost", "port": 1984, },"' +
-		constants.TABLENAME_ORDER_LINE+ '" : { "host": "localhost", "port": 1985, },"' +
-		constants.TABLENAME_HISTORY + '" : { "host": "localhost",	"port": 1986, }, }, }' ), }
+		tpcc.constants.TABLENAME_ITEM + '":{ "host": "localhost", "port": 1978, },"' +
+		tpcc.constants.TABLENAME_WAREHOUSE + '" : { "host": "localhost", "port": 1979, },"' +
+		tpcc.constants.TABLENAME_DISTRICT + '" : { "host": "localhost", "port": 1980, },"' +
+		tpcc.constants.TABLENAME_CUSTOMER + '" : { "host": "localhost", "port": 1981, },"' +
+		tpcc.constants.TABLENAME_STOCK + '" : { "host": "localhost", "port": 1982, },"' +
+		tpcc.constants.TABLENAME_ORDERS + '" : { "host": "localhost", "port": 1983, },"' +
+		tpcc.constants.TABLENAME_NEW_ORDER + '" : { "host": "localhost", "port": 1984, },"' +
+		tpcc.constants.TABLENAME_ORDER_LINE+ '" : { "host": "localhost", "port": 1985, },"' +
+		tpcc.constants.TABLENAME_HISTORY + '" : { "host": "localhost",	"port": 1986, }, }, }' ), }
 
 	def __init__(self, ddl):
 		super(TokyocabinetDriver, self).__init__("tokyocabinet", ddl)
@@ -291,7 +291,7 @@ class TokyocabinetDriver(AbstractDriver):
 		num_columns = xrange(len(columns))
 		records = list()
 
-		if tableName == constants.TABLENAME_WAREHOUSE:
+		if tableName == tpcc.constants.TABLENAME_WAREHOUSE:
 			for t in tuples:
 				w_key = t[0] # W_ID
 				sID = self.getServer(w_key)
@@ -305,7 +305,7 @@ class TokyocabinetDriver(AbstractDriver):
 				sys.stderr.write("%s(%s): server ID does not exist or is offline\n" %(KeyError, err))
 				sys.exit(1)
 
-		elif tableName == constants.TABLENAME_DISTRICT:
+		elif tableName == tpcc.constants.TABLENAME_DISTRICT:
 			for t in tuples:
 				w_key = t[1] # W_ID
 				sID = self.getServer(w_key)
@@ -322,7 +322,7 @@ class TokyocabinetDriver(AbstractDriver):
 
 		## Item table doesn't have a w_id for partition. Replicate it to all
 		## servers
-		elif tableName == constants.TABLENAME_ITEM:
+		elif tableName == tpcc.constants.TABLENAME_ITEM:
 			for t in tuples:
 				i_key = str(t[0])
 				cols = dict(map(lambda i: (columns[i], t[i]), num_columns))
@@ -338,7 +338,7 @@ class TokyocabinetDriver(AbstractDriver):
 				## FOR
 			## FOR
 
-		elif tableName == constants.TABLENAME_CUSTOMER:
+		elif tableName == tpcc.constants.TABLENAME_CUSTOMER:
 			for t in tuples:
 				w_key = t[2] # W_ID
 				sID = self.getServer(w_key)
@@ -353,7 +353,7 @@ class TokyocabinetDriver(AbstractDriver):
 				sys.stderr.write("%s(%s): server ID does not exist or is offline\n" %(KeyError, err))
 				sys.exit(1)
 
-		elif tableName == constants.TABLENAME_HISTORY:
+		elif tableName == tpcc.constants.TABLENAME_HISTORY:
 			for t in tuples:
 				w_key = t[4] # W_ID
 				# Not really a primary key, but we need to generate
@@ -370,7 +370,7 @@ class TokyocabinetDriver(AbstractDriver):
 				sys.stderr.write("%s(%s): server ID does not exist or is offline\n" %(KeyError, err))
 				sys.exit(1)
 
-		elif tableName == constants.TABLENAME_STOCK:
+		elif tableName == tpcc.constants.TABLENAME_STOCK:
 			for t in tuples:
 				w_key = t[1] # W_ID
 				sID = self.getServer(w_key)
@@ -385,7 +385,7 @@ class TokyocabinetDriver(AbstractDriver):
 				sys.stderr.write("%s(%s): server ID does not exist or is offline\n" %(KeyError, err))
 				sys.exit(1)
 
-		elif tableName == constants.TABLENAME_ORDERS:
+		elif tableName == tpcc.constants.TABLENAME_ORDERS:
 			for t in tuples:
 				w_key = t[3] # W_ID
 				sID = self.getServer(w_key)
@@ -400,7 +400,7 @@ class TokyocabinetDriver(AbstractDriver):
 				sys.stderr.write("%s(%s): server ID does not exist or is offline\n" %(KeyError, err))
 				sys.exit(1)
 
-		elif tableName == constants.TABLENAME_NEW_ORDER:
+		elif tableName == tpcc.constants.TABLENAME_NEW_ORDER:
 			for t in tuples:
 				w_key = t[2] # W_ID
 				sID = self.getServer(w_key)
@@ -415,7 +415,7 @@ class TokyocabinetDriver(AbstractDriver):
 				sys.stderr.write("%s(%s): server ID does not exist or is offline\n" %(KeyError, err))
 				sys.exit(1)
 
-		elif tableName == constants.TABLENAME_ORDER_LINE:
+		elif tableName == tpcc.constants.TABLENAME_ORDER_LINE:
 			for t in tuples:
 				w_key = t[2] # W_ID
 				sID = self.getServer(w_key)
@@ -486,13 +486,13 @@ class TokyocabinetDriver(AbstractDriver):
 
 		sID = self.getServer(w_id)
 
-		newOrderQuery = self.conn[sID][constants.TABLENAME_NEW_ORDER].query
-		ordersQuery   = self.conn[sID][constants.TABLENAME_ORDERS].query
-		orderLineQuery = self.conn[sID][constants.TABLENAME_ORDER_LINE].query
-		customerQuery = self.conn[sID][constants.TABLENAME_CUSTOMER].query
+		newOrderQuery = self.conn[sID][tpcc.constants.TABLENAME_NEW_ORDER].query
+		ordersQuery   = self.conn[sID][tpcc.constants.TABLENAME_ORDERS].query
+		orderLineQuery = self.conn[sID][tpcc.constants.TABLENAME_ORDER_LINE].query
+		customerQuery = self.conn[sID][tpcc.constants.TABLENAME_CUSTOMER].query
 
 		results = [ ]
-		for d_id in xrange(1, constants.DISTRICTS_PER_WAREHOUSE+1):
+		for d_id in xrange(1, tpcc.constants.DISTRICTS_PER_WAREHOUSE+1):
 
 			# getNewOrder
 			# SELECT NO_O_ID FROM NEW_ORDER WHERE NO_D_ID = ? AND NO_W_ID = ? AND NO_O_ID > -1 LIMIT 1
@@ -546,7 +546,7 @@ class TokyocabinetDriver(AbstractDriver):
 				records.append((key, cols))
 			## FOR
 
-			self.conn[sID][constants.TABLENAME_ORDERS].multi_set(records)
+			self.conn[sID][tpcc.constants.TABLENAME_ORDERS].multi_set(records)
 
 			# updateOrderLine
 			# UPDATE ORDER_LINE SET OL_DELIVERY_D = ? WHERE OL_O_ID = ? AND OL_D_ID = ? AND OL_W_ID = ?
@@ -559,7 +559,7 @@ class TokyocabinetDriver(AbstractDriver):
 				records.append((key, cols))
 			## FOR
 
-			self.conn[sID][constants.TABLENAME_ORDER_LINE].multi_set(records)
+			self.conn[sID][tpcc.constants.TABLENAME_ORDER_LINE].multi_set(records)
 
 			# updateCustomer
 			# UPDATE CUSTOMER SET C_BALANCE = C_BALANCE + ? WHERE C_ID = ? AND C_D_ID = ? AND C_W_ID = ?
@@ -572,7 +572,7 @@ class TokyocabinetDriver(AbstractDriver):
 				records.append((key, cols))
 			## FOR
 
-			self.conn[sID][constants.TABLENAME_CUSTOMER].multi_add(records)
+			self.conn[sID][tpcc.constants.TABLENAME_CUSTOMER].multi_add(records)
 		
 			results.append((d_id, no_o_id))
 		## FOR
@@ -605,12 +605,12 @@ class TokyocabinetDriver(AbstractDriver):
 
 		sID = self.getServer(w_id)
 
-		warehouseQuery = self.conn[sID][constants.TABLENAME_WAREHOUSE].query
-		districtQuery  = self.conn[sID][constants.TABLENAME_DISTRICT].query
-		customerQuery  = self.conn[sID][constants.TABLENAME_CUSTOMER].query
-		orderQuery = self.conn[sID][constants.TABLENAME_ORDERS].query
-		newOrderQuery = self.conn[sID][constants.TABLENAME_NEW_ORDER].query
-		itemQuery = self.conn[sID][constants.TABLENAME_ITEM].query
+		warehouseQuery = self.conn[sID][tpcc.constants.TABLENAME_WAREHOUSE].query
+		districtQuery  = self.conn[sID][tpcc.constants.TABLENAME_DISTRICT].query
+		customerQuery  = self.conn[sID][tpcc.constants.TABLENAME_CUSTOMER].query
+		orderQuery = self.conn[sID][tpcc.constants.TABLENAME_ORDERS].query
+		newOrderQuery = self.conn[sID][tpcc.constants.TABLENAME_NEW_ORDER].query
+		itemQuery = self.conn[sID][tpcc.constants.TABLENAME_ITEM].query
 
 		all_local = True
 		items = [ ]
@@ -661,7 +661,7 @@ class TokyocabinetDriver(AbstractDriver):
 			records.append((key, cols))
 		## FOR
 
-		self.conn[sID][constants.TABLENAME_DISTRICT].multi_set(records)
+		self.conn[sID][tpcc.constants.TABLENAME_DISTRICT].multi_set(records)
 
 		# getCustomer
 		# SELECT C_DISCOUNT, C_LAST, C_CREDIT FROM CUSTOMER WHERE C_W_ID = ? AND C_D_ID = ? AND C_ID = ?
@@ -674,7 +674,7 @@ class TokyocabinetDriver(AbstractDriver):
 		## Insert Order Information
 		## -----------------
 		ol_cnt = len(i_ids)
-		o_carrier_id = constants.NULL_CARRIER_ID
+		o_carrier_id = tpcc.constants.NULL_CARRIER_ID
 
 		# createOrder
 		# INSERT INTO ORDERS (O_ID, O_D_ID, O_W_ID, O_C_ID, O_ENTRY_D, O_CARRIER_ID, O_OL_CNT,
@@ -685,14 +685,14 @@ class TokyocabinetDriver(AbstractDriver):
 						c_id, "O_ENTRY_D": o_entry_d, "O_CARRIER_ID":
 						o_carrier_id, "O_OL_CNT": o_ol_cnt, "O_ALL_LOCAL":
 						all_local}
-		self.conn[sID][constants.TABLENAME_ORDERS].multi_set([(key, cols)])
+		self.conn[sID][tpcc.constants.TABLENAME_ORDERS].multi_set([(key, cols)])
 
 		# createNewOrder
 		# INSERT INTO NEW_ORDER (NO_O_ID, NO_D_ID, NO_W_ID) VALUES (?, ?, ?)
 
 		key = self.tupleToString((d_next_o_id, d_id, w_id))
 		cols = {"NO_O_ID": d_next_o_id, "NO_D_ID": d_id, "NO_W_ID": w_id}
-		self.conn[sID][constants.TABLENAME_NEW_ORDER].multi_set([(key, cols)])
+		self.conn[sID][tpcc.constants.TABLENAME_NEW_ORDER].multi_set([(key, cols)])
 
 		## -------------------------------
 		## Insert Order Item Information
@@ -748,7 +748,7 @@ class TokyocabinetDriver(AbstractDriver):
 			if ol_supply_w_id != w_id: s_remote_cnt += 1
 
 			sSID = self.getServer(ol_supply_w_id)
-			stockQuery = self.conn[sID][constants.TABLENAME_STOCK].query
+			stockQuery = self.conn[sID][tpcc.constants.TABLENAME_STOCK].query
 			stocks = stockQuery.filter(S_I_ID = ol_i_id, S_W_ID = ol_supply_w_id)
 			records = list()
 			for record in stocks:
@@ -760,9 +760,9 @@ class TokyocabinetDriver(AbstractDriver):
 				records.append((key, cols))
 			## FOR
 
-			self.conn[sSID][constants.TABLENAME_STOCK].multi_set(records)
+			self.conn[sSID][tpcc.constants.TABLENAME_STOCK].multi_set(records)
 
-			if i_data.find(constants.ORIGINAL_STRING) != -1 and s_data.find(constants.ORIGINAL_STRING) != -1:
+			if i_data.find(tpcc.constants.ORIGINAL_STRING) != -1 and s_data.find(tpcc.constants.ORIGINAL_STRING) != -1:
 				brand_generic = 'B'
 			else:
 				brand_generic = 'G'
@@ -781,7 +781,7 @@ class TokyocabinetDriver(AbstractDriver):
 					"OL_SUPPLY_W_ID": ol_supply_w_id, "OL_DELIVERY_D":
 					ol_entry_d, "OL_QUANTITY": ol_quantity, "OL_AMOUNT":
 					ol_amount, "OL_DIST_INFO": s_dist_xx}
-			self.conn[sID][constants.TABLENAME_ORDER_LINE].multi_set([(key, cols)])
+			self.conn[sID][tpcc.constants.TABLENAME_ORDER_LINE].multi_set([(key, cols)])
 
 			## Add the info to be returned
 			item_data.append((i_name, s_quantity, brand_generic, i_price, ol_amount))
@@ -816,9 +816,9 @@ class TokyocabinetDriver(AbstractDriver):
 
 		sID = self.getServer(w_id)
 
-		customerQuery = self.conn[sID][constants.TABLENAME_CUSTOMER].query
-		orderQuery    = self.conn[sID][constants.TABLENAME_ORDERS].query
-		orderLineQuery= self.conn[sID][constants.TABLENAME_ORDER_LINE].query
+		customerQuery = self.conn[sID][tpcc.constants.TABLENAME_CUSTOMER].query
+		orderQuery    = self.conn[sID][tpcc.constants.TABLENAME_ORDERS].query
+		orderLineQuery= self.conn[sID][tpcc.constants.TABLENAME_ORDER_LINE].query
 
 		if c_id != None:
 			# getCustomerByCustomerId
@@ -886,9 +886,9 @@ class TokyocabinetDriver(AbstractDriver):
 		sID = self.getServer(w_id)
 		cSID = self.getServer(c_w_id)
 
-		customerQuery  = self.conn[cSID][constants.TABLENAME_CUSTOMER].query
-		warehouseQuery = self.conn[sID][constants.TABLENAME_WAREHOUSE].query
-		districtQuery  = self.conn[sID][constants.TABLENAME_DISTRICT].query
+		customerQuery  = self.conn[cSID][tpcc.constants.TABLENAME_CUSTOMER].query
+		warehouseQuery = self.conn[sID][tpcc.constants.TABLENAME_WAREHOUSE].query
+		districtQuery  = self.conn[sID][tpcc.constants.TABLENAME_DISTRICT].query
 
 		if c_id != None:
 			# getCustomerByCustomerId
@@ -937,7 +937,7 @@ class TokyocabinetDriver(AbstractDriver):
 			cols["W_YTD"] = float(cols["W_YTD"]) + h_amount
 			records.append((key, cols))
 		## FOR
-		self.conn[sID][constants.TABLENAME_WAREHOUSE].multi_set(records)
+		self.conn[sID][tpcc.constants.TABLENAME_WAREHOUSE].multi_set(records)
 
 		# getDistrict
 		# SELECT D_NAME, D_STREET_1, D_STREET_2, D_CITY, D_STATE, D_ZIP FROM DISTRICT
@@ -956,16 +956,16 @@ class TokyocabinetDriver(AbstractDriver):
 			cols["D_YTD"] = float(cols["D_YTD"]) + h_amount
 			records.append((key, cols))
 		## FOR
-		self.conn[sID][constants.TABLENAME_DISTRICT].multi_set(records)
+		self.conn[sID][tpcc.constants.TABLENAME_DISTRICT].multi_set(records)
 
 		# Customer Credit Information
 		customers = customerQuery.filter(C_W_ID = c_w_id, C_D_ID = c_d_id, C_ID = c_id)
 		cInfo = customers.columns("C_CREDIT")[0]
 		
-		if cInfo["C_CREDIT"] == constants.BAD_CREDIT:
+		if cInfo["C_CREDIT"] == tpcc.constants.BAD_CREDIT:
 			newData = " ".join(map(str, [c_id, c_d_id, c_w_id, d_id, w_id, h_amount]))
 			c_data = (newData + "|" + c_data)
-			if len(c_data) > constants.MAX_C_DATA: c_data =	c_data[:constants.MAX_C_DATA]
+			if len(c_data) > tpcc.constants.MAX_C_DATA: c_data =	c_data[:tpcc.constants.MAX_C_DATA]
 
 			# updateBCCustomer
 			# UPDATE CUSTOMER SET C_BALANCE = ?, C_YTD_PAYMENT = ?, C_PAYMENT_CNT = ?, C_DATA = ?
@@ -980,7 +980,7 @@ class TokyocabinetDriver(AbstractDriver):
 				cols["C_DATA"] = c_data
 				records.append((key, cols))
 			## FOR
-			self.conn[cSID][constants.TABLENAME_CUSTOMER].multi_set(records)
+			self.conn[cSID][tpcc.constants.TABLENAME_CUSTOMER].multi_set(records)
 		else:
 			c_data = ""
 
@@ -996,7 +996,7 @@ class TokyocabinetDriver(AbstractDriver):
 				cols["C_PAYMENT_CNT"] = c_payment_cnt
 				records.append((key, cols))
 			## FOR
-			self.conn[cSID][constants.TABLENAME_CUSTOMER].multi_set(records)
+			self.conn[cSID][tpcc.constants.TABLENAME_CUSTOMER].multi_set(records)
 
 		# Concatenate w_name, four space, d_name
 		h_data = "%s    %s" % (warehouseInfo["W_NAME"], districtInfo["D_NAME"])
@@ -1009,7 +1009,7 @@ class TokyocabinetDriver(AbstractDriver):
 		cols = {"H_C_ID": c_id, "H_C_D_ID": c_d_id, "H_C_W_ID": c_w_id, "H_D_ID":
 						d_id, "H_W_ID": w_id, "H_DATE": h_date, "H_AMOUNT":
 						h_amount, "H_DATA": h_data}
-		self.conn[sID][constants.TABLENAME_HISTORY].multi_set([(key, cols)])
+		self.conn[sID][tpcc.constants.TABLENAME_HISTORY].multi_set([(key, cols)])
 
 		# TPC-C 2.5.3.3: Must display the following fields:
 		# W_ID, D_ID, C_ID, C_D_ID, C_W_ID, W_STREET_1, W_STREET_2, W_CITY,
@@ -1035,9 +1035,9 @@ class TokyocabinetDriver(AbstractDriver):
 
 		sID = self.getServer(w_id)
 
-		districtQuery  = self.conn[sID][constants.TABLENAME_DISTRICT].query
-		orderLineQuery = self.conn[sID][constants.TABLENAME_ORDER_LINE].query
-		stockQuery     = self.conn[sID][constants.TABLENAME_STOCK].query
+		districtQuery  = self.conn[sID][tpcc.constants.TABLENAME_DISTRICT].query
+		orderLineQuery = self.conn[sID][tpcc.constants.TABLENAME_ORDER_LINE].query
+		stockQuery     = self.conn[sID][tpcc.constants.TABLENAME_STOCK].query
 
 		# getOId
 		# "SELECT D_NEXT_O_ID FROM DISTRICT WHERE D_W_ID = ? AND D_ID = ?"
