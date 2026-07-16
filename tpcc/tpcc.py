@@ -62,7 +62,8 @@ def createDriverClass(name):
 ## ==============================================
 def getDrivers():
     drivers = [ ]
-    for f in map(lambda x: os.path.basename(x).replace("driver.py", ""), glob.glob("./drivers/*driver.py")):
+    drivers_dir = os.path.join(os.path.dirname(os.path.realpath(__file__)), "drivers")
+    for f in map(lambda x: os.path.basename(x).replace("driver.py", ""), glob.glob(os.path.join(drivers_dir, "*driver.py"))):
         if f != "abstract": drivers.append(f)
     return (drivers)
 ## DEF
