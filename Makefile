@@ -4,9 +4,11 @@ SHELL := /bin/bash
 # Define shortcuts/tasks that do not generate output files
 .PHONY: gen run genrun test cleancandidates cleanall
 
+MODEL ?= gemini-2.5-flash
+
 gen:
 	@echo "Generating driver..."
-	uv run python engine/main.py --gemini-model=gemini-2.5-flash
+	uv run python engine/main.py --model=$(MODEL)
 
 run:
 	$(eval DRIVER := $(filter-out $@,$(MAKECMDGOALS)))
@@ -20,8 +22,8 @@ run:
 		--clients=1
 
 genrun:
-	@stem=$$(uv run python engine/main.py --print-name --model "gemini_2_5_flash"); \
-	$(MAKE) gen && \
+	@stem=$$(uv run python engine/main.py --print-name --model=$(MODEL)); \
+	$(MAKE) gen MODEL=$(MODEL) && \
 	echo "Running $$stem..." && \
 	$(MAKE) run $$stem
 
