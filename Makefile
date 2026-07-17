@@ -21,7 +21,7 @@ run:
 		--config=tpcc/configs/mysql.config \
 		--clients=1
 
-genrun:
+gen-run:
 	@stem=$$(uv run python engine/main.py --print-name --model=$(MODEL)); \
 	$(MAKE) gen MODEL=$(MODEL) && \
 	echo "Running $$stem..." && \
@@ -31,8 +31,8 @@ genrun:
 %:
 	@true
 
-test:
-	@echo "Running tests..."
+test-tpcc:
+	@echo "Running integration tests..."
 	uv run python tpcc/scripts/correctness_check.py \
 		--config=configs/mysql.config \
 		--config2=configs/mysql.config \
@@ -40,12 +40,17 @@ test:
 		--warehouses=1 --transactions=500
 	@echo "Tests completed."
 
+test-unit:
+	@echo "Running unit tests..."
+	uv run pytest tests/ -v
+	@echo "Unit tests completed."
+
 clean:
 	@echo "Dropping candidates database..."
 	@mysql -h 127.0.0.1 -u root -pmysql_root_password -e "DROP DATABASE IF EXISTS \`tpcc-candidates\`" 2>/dev/null
 	@echo "Dropping candidates database completed."
 
-cleanall:
+clean-all:
 	@echo "Dropping all TPC-C databases..."
 	@./tpcc/scripts/cleanup_db.sh
 	@echo "Dropping all TPC-C databases completed."
