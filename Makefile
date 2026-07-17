@@ -2,7 +2,11 @@
 SHELL := /bin/bash
 
 # Define shortcuts/tasks that do not generate output files
-.PHONY: run test clean cleanall
+.PHONY: gen run genrun test cleancandidates cleanall
+
+gen:
+	@echo "Generating driver..."
+	uv run python engine/main.py --gemini-model=gemini-2.5-flash
 
 run:
 	$(eval DRIVER := $(filter-out $@,$(MAKECMDGOALS)))
@@ -14,6 +18,12 @@ run:
 	uv run python tpcc/tpcc.py $(DRIVER) \
 		--config=tpcc/configs/mysql.config \
 		--clients=1
+
+genrun:
+	@stem=$$(uv run python engine/main.py --print-name --model "gemini_2_5_flash"); \
+	$(MAKE) gen && \
+	echo "Running $$stem..." && \
+	$(MAKE) run $$stem
 
 # Prevent Make from erroring on extra args
 %:
