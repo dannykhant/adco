@@ -14,23 +14,27 @@ except ImportError:
 
 TXN_QUERIES = {
     "DELIVERY": {
-        "getNewOrder": "SELECT NO_O_ID FROM NEW_ORDER WHERE NO_D_ID = %s AND NO_W_ID = %s AND NO_O_ID > -1 LIMIT 1",
+        "getNewOrdersBatch": "SELECT NO_D_ID, MIN(NO_O_ID) FROM NEW_ORDER WHERE NO_W_ID = %s AND NO_O_ID > -1 GROUP BY NO_D_ID",
+        "getCustomersBatch": "SELECT O_D_ID, O_ID, O_C_ID FROM ORDERS WHERE O_W_ID = %s AND (O_D_ID, O_ID) IN __IN_CLAUSE__",
+        "sumOLAmountsBatch": "SELECT OL_D_ID, OL_O_ID, SUM(OL_AMOUNT) FROM ORDER_LINE WHERE OL_W_ID = %s AND (OL_D_ID, OL_O_ID) IN __IN_CLAUSE__ GROUP BY OL_D_ID, OL_O_ID",
         "deleteNewOrder": "DELETE FROM NEW_ORDER WHERE NO_D_ID = %s AND NO_W_ID = %s AND NO_O_ID = %s",
-        "getCId": "SELECT O_C_ID FROM ORDERS WHERE O_ID = %s AND O_D_ID = %s AND O_W_ID = %s",
         "updateOrders": "UPDATE ORDERS SET O_CARRIER_ID = %s WHERE O_ID = %s AND O_D_ID = %s AND O_W_ID = %s",
         "updateOrderLine": "UPDATE ORDER_LINE SET OL_DELIVERY_D = %s WHERE OL_O_ID = %s AND OL_D_ID = %s AND OL_W_ID = %s",
-        "sumOLAmount": "SELECT SUM(OL_AMOUNT) FROM ORDER_LINE WHERE OL_O_ID = %s AND OL_D_ID = %s AND OL_W_ID = %s",
         "updateCustomer": "UPDATE CUSTOMER SET C_BALANCE = C_BALANCE + %s WHERE C_ID = %s AND C_D_ID = %s AND C_W_ID = %s",
     },
     "NEW_ORDER": {
-        "getWarehouseTaxRate": "SELECT W_TAX FROM WAREHOUSE WHERE W_ID = %s",
-        "getDistrict": "SELECT D_TAX, D_NEXT_O_ID FROM DISTRICT WHERE D_ID = %s AND D_W_ID = %s",
+        "getWarehouseDistrictCustomer": """
+            SELECT W_TAX, D_TAX, D_NEXT_O_ID, C_DISCOUNT, C_LAST, C_CREDIT
+            FROM WAREHOUSE
+            JOIN DISTRICT ON D_W_ID = W_ID AND D_ID = %s
+            JOIN CUSTOMER ON C_W_ID = W_ID AND C_D_ID = D_ID AND C_ID = %s
+            WHERE W_ID = %s
+        """,
         "incrementNextOrderId": "UPDATE DISTRICT SET D_NEXT_O_ID = %s WHERE D_ID = %s AND D_W_ID = %s",
-        "getCustomer": "SELECT C_DISCOUNT, C_LAST, C_CREDIT FROM CUSTOMER WHERE C_W_ID = %s AND C_D_ID = %s AND C_ID = %s",
         "createOrder": "INSERT INTO ORDERS (O_ID, O_D_ID, O_W_ID, O_C_ID, O_ENTRY_D, O_CARRIER_ID, O_OL_CNT, O_ALL_LOCAL) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
         "createNewOrder": "INSERT INTO NEW_ORDER (NO_O_ID, NO_D_ID, NO_W_ID) VALUES (%s, %s, %s)",
-        "getItemInfo": "SELECT I_PRICE, I_NAME, I_DATA FROM ITEM WHERE I_ID = %s",
-        "getStockInfo": "SELECT S_QUANTITY, S_DATA, S_YTD, S_ORDER_CNT, S_REMOTE_CNT, S_DIST_%02d FROM STOCK WHERE S_I_ID = %%s AND S_W_ID = %%s",
+        "getItemInfo_batch": "SELECT I_ID, I_PRICE, I_NAME, I_DATA FROM ITEM WHERE I_ID IN __IN_CLAUSE__",
+        "getStockInfo_batch_template": "SELECT S_I_ID, S_W_ID, S_QUANTITY, S_DATA, S_YTD, S_ORDER_CNT, S_REMOTE_CNT, S_DIST_%02d FROM STOCK WHERE (S_I_ID, S_W_ID) IN __IN_CLAUSE__",
         "updateStock": "UPDATE STOCK SET S_QUANTITY = %s, S_YTD = %s, S_ORDER_CNT = %s, S_REMOTE_CNT = %s WHERE S_I_ID = %s AND S_W_ID = %s",
         "createOrderLine": "INSERT INTO ORDER_LINE (OL_O_ID, OL_D_ID, OL_W_ID, OL_NUMBER, OL_I_ID, OL_SUPPLY_W_ID, OL_DELIVERY_D, OL_QUANTITY, OL_AMOUNT, OL_DIST_INFO) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
     },
@@ -38,16 +42,34 @@ TXN_QUERIES = {
     "ORDER_STATUS": {
         "getCustomerByCustomerId": "SELECT C_ID, C_FIRST, C_MIDDLE, C_LAST, C_BALANCE FROM CUSTOMER WHERE C_W_ID = %s AND C_D_ID = %s AND C_ID = %s",
         "getCustomersByLastName": "SELECT C_ID, C_FIRST, C_MIDDLE, C_LAST, C_BALANCE FROM CUSTOMER WHERE C_W_ID = %s AND C_D_ID = %s AND C_LAST = %s ORDER BY C_FIRST",
-        "getLastOrder": "SELECT O_ID, O_CARRIER_ID, O_ENTRY_D FROM ORDERS WHERE O_W_ID = %s AND O_D_ID = %s AND O_C_ID = %s ORDER BY O_ID DESC LIMIT 1",
-        "getOrderLines": "SELECT OL_SUPPLY_W_ID, OL_I_ID, OL_QUANTITY, OL_AMOUNT, OL_DELIVERY_D FROM ORDER_LINE WHERE OL_W_ID = %s AND OL_D_ID = %s AND OL_O_ID = %s",
+        "getLastOrderAndOrderLines": """
+            SELECT O_ID, O_CARRIER_ID, O_ENTRY_D, OL_SUPPLY_W_ID, OL_I_ID, OL_QUANTITY, OL_AMOUNT, OL_DELIVERY_D
+            FROM ORDERS
+            JOIN ORDER_LINE ON OL_W_ID = O_W_ID AND OL_D_ID = O_D_ID AND OL_O_ID = O_ID
+            WHERE O_W_ID = %s AND O_D_ID = %s AND O_C_ID = %s
+              AND O_ID = (SELECT MAX(O_ID) FROM ORDERS WHERE O_W_ID = %s AND O_D_ID = %s AND O_C_ID = %s)
+        """,
     },
 
     "PAYMENT": {
-        "getWarehouse": "SELECT W_NAME, W_STREET_1, W_STREET_2, W_CITY, W_STATE, W_ZIP FROM WAREHOUSE WHERE W_ID = %s",
+        "getWarehouseDistrictCustomer": """
+            SELECT W_NAME, W_STREET_1, W_STREET_2, W_CITY, W_STATE, W_ZIP,
+                   D_NAME, D_STREET_1, D_STREET_2, D_CITY, D_STATE, D_ZIP,
+                   C_ID, C_FIRST, C_MIDDLE, C_LAST, C_STREET_1, C_STREET_2, C_CITY,
+                   C_STATE, C_ZIP, C_PHONE, C_SINCE, C_CREDIT, C_CREDIT_LIM,
+                   C_DISCOUNT, C_BALANCE, C_YTD_PAYMENT, C_PAYMENT_CNT, C_DATA
+            FROM WAREHOUSE, DISTRICT, CUSTOMER
+            WHERE W_ID = %s AND D_W_ID = W_ID AND D_ID = %s
+              AND C_W_ID = %s AND C_D_ID = %s AND C_ID = %s
+        """,
+        "getWarehouseAndDistrict": """
+            SELECT W_NAME, W_STREET_1, W_STREET_2, W_CITY, W_STATE, W_ZIP,
+                   D_NAME, D_STREET_1, D_STREET_2, D_CITY, D_STATE, D_ZIP
+            FROM WAREHOUSE, DISTRICT
+            WHERE W_ID = %s AND D_W_ID = W_ID AND D_ID = %s
+        """,
         "updateWarehouseBalance": "UPDATE WAREHOUSE SET W_YTD = W_YTD + %s WHERE W_ID = %s",
-        "getDistrict": "SELECT D_NAME, D_STREET_1, D_STREET_2, D_CITY, D_STATE, D_ZIP FROM DISTRICT WHERE D_W_ID = %s AND D_ID = %s",
         "updateDistrictBalance": "UPDATE DISTRICT SET D_YTD = D_YTD + %s WHERE D_W_ID  = %s AND D_ID = %s",
-        "getCustomerByCustomerId": "SELECT C_ID, C_FIRST, C_MIDDLE, C_LAST, C_STREET_1, C_STREET_2, C_CITY, C_STATE, C_ZIP, C_PHONE, C_SINCE, C_CREDIT, C_CREDIT_LIM, C_DISCOUNT, C_BALANCE, C_YTD_PAYMENT, C_PAYMENT_CNT, C_DATA FROM CUSTOMER WHERE C_W_ID = %s AND C_D_ID = %s AND C_ID = %s",
         "getCustomersByLastName": "SELECT C_ID, C_FIRST, C_MIDDLE, C_LAST, C_STREET_1, C_STREET_2, C_CITY, C_STATE, C_ZIP, C_PHONE, C_SINCE, C_CREDIT, C_CREDIT_LIM, C_DISCOUNT, C_BALANCE, C_YTD_PAYMENT, C_PAYMENT_CNT, C_DATA FROM CUSTOMER WHERE C_W_ID = %s AND C_D_ID = %s AND C_LAST = %s ORDER BY C_FIRST",
         "updateBCCustomer": "UPDATE CUSTOMER SET C_BALANCE = %s, C_YTD_PAYMENT = %s, C_PAYMENT_CNT = %s, C_DATA = %s WHERE C_W_ID = %s AND C_D_ID = %s AND C_ID = %s",
         "updateGCCustomer": "UPDATE CUSTOMER SET C_BALANCE = %s, C_YTD_PAYMENT = %s, C_PAYMENT_CNT = %s WHERE C_W_ID = %s AND C_D_ID = %s AND C_ID = %s",
@@ -55,25 +77,25 @@ TXN_QUERIES = {
     },
 
     "STOCK_LEVEL": {
-        "getOId": "SELECT D_NEXT_O_ID FROM DISTRICT WHERE D_W_ID = %s AND D_ID = %s",
         "getStockCount": """
-            SELECT COUNT(DISTINCT(OL_I_ID)) FROM ORDER_LINE, STOCK
-            WHERE OL_W_ID = %s
-              AND OL_D_ID = %s
-              AND OL_O_ID < %s
-              AND OL_O_ID >= %s
-              AND S_W_ID = %s
-              AND S_I_ID = OL_I_ID
-              AND S_QUANTITY < %s
+            SELECT COUNT(DISTINCT OL_I_ID)
+            FROM (
+                SELECT OL_I_ID FROM ORDER_LINE
+                WHERE OL_W_ID = %s AND OL_D_ID = %s
+                  AND OL_O_ID < (SELECT D_NEXT_O_ID FROM DISTRICT WHERE D_W_ID = %s AND D_ID = %s)
+                  AND OL_O_ID >= (SELECT D_NEXT_O_ID FROM DISTRICT WHERE D_W_ID = %s AND D_ID = %s) - 20
+            ) OL
+            JOIN STOCK ON S_I_ID = OL.OL_I_ID AND S_W_ID = %s
+            WHERE S_QUANTITY < %s
         """,
     },
 }
 
 
 ## ==============================================
-## BaselinemysqlDriver
+## OptimizedmysqlDriver
 ## ==============================================
-class BaselinemysqlDriver(AbstractDriver):
+class OptimizedmysqlDriver(AbstractDriver):
     DEFAULT_CONFIG = {
         "host": ("MySQL server hostname", "localhost"),
         "port": ("MySQL server port", 3306),
@@ -86,7 +108,7 @@ class BaselinemysqlDriver(AbstractDriver):
         mysql_ddl = os.path.join(os.path.dirname(ddl), "tpcc.mysql.sql")
         if os.path.exists(mysql_ddl):
             ddl = mysql_ddl
-        super(BaselinemysqlDriver, self).__init__("baselinemysql", ddl)
+        super(OptimizedmysqlDriver, self).__init__("mysql", ddl)
         self.host = None
         self.port = None
         self.user = None
@@ -99,13 +121,13 @@ class BaselinemysqlDriver(AbstractDriver):
     ## makeDefaultConfig
     ## ----------------------------------------------
     def makeDefaultConfig(self):
-        return BaselinemysqlDriver.DEFAULT_CONFIG
+        return OptimizedmysqlDriver.DEFAULT_CONFIG
 
     ## ----------------------------------------------
     ## loadConfig
     ## ----------------------------------------------
     def loadConfig(self, config):
-        for key in BaselinemysqlDriver.DEFAULT_CONFIG:
+        for key in OptimizedmysqlDriver.DEFAULT_CONFIG:
             assert key in config, "Missing parameter '%s' in %s configuration" % (key, self.name)
 
         self.host = str(config["host"])
@@ -151,12 +173,7 @@ class BaselinemysqlDriver(AbstractDriver):
         for statement in sql.split(';'):
             statement = statement.strip()
             if statement:
-                stmt = statement.replace("CREATE TABLE", "CREATE TABLE IF NOT EXISTS")
-                try:
-                    cursor.execute(stmt)
-                except mysql.OperationalError as e:
-                    if e.args[0] not in (1061, 1005):
-                        raise
+                cursor.execute(statement)
         cursor.execute("SET FOREIGN_KEY_CHECKS = 1")
 
     ## ----------------------------------------------
@@ -180,6 +197,60 @@ class BaselinemysqlDriver(AbstractDriver):
         self.conn.commit()
 
     ## ----------------------------------------------
+    ## Batch helper methods for loops
+    ## ----------------------------------------------
+    def _batch_items(self, i_ids):
+        q = TXN_QUERIES["NEW_ORDER"]
+        placeholders = ",".join(["%s"] * len(i_ids))
+        query = q["getItemInfo_batch"].replace("__IN_CLAUSE__", f"({placeholders})")
+        self.cursor.execute(query, i_ids)
+        item_map = {row[0]: row[1:] for row in self.cursor.fetchall()}
+        items = []
+        for i_id in i_ids:
+            item = item_map.get(i_id)
+            if item is None:
+                items.append(())
+            else:
+                items.append(item)
+        return items
+
+    def _batch_stock_info(self, d_id, i_ids, i_w_ids):
+        q = TXN_QUERIES["NEW_ORDER"]
+        stock_pairs = list(zip(i_ids, i_w_ids))
+        placeholders = ",".join(["(%s, %s)"] * len(stock_pairs))
+        query = q["getStockInfo_batch_template"] % d_id
+        query = query.replace("__IN_CLAUSE__", f"({placeholders})")
+        flattened = []
+        for s_i_id, s_w_id in stock_pairs:
+            flattened.extend([s_i_id, s_w_id])
+        self.cursor.execute(query, flattened)
+        return {(row[0], row[1]): row for row in self.cursor.fetchall()}
+
+    def _batch_update_stock(self, params_list):
+        q = TXN_QUERIES["NEW_ORDER"]
+        self.cursor.executemany(q["updateStock"], params_list)
+
+    def _batch_insert_order_lines(self, params_list):
+        q = TXN_QUERIES["NEW_ORDER"]
+        self.cursor.executemany(q["createOrderLine"], params_list)
+
+    def _batch_delete_new_orders(self, params_list):
+        q = TXN_QUERIES["DELIVERY"]
+        self.cursor.executemany(q["deleteNewOrder"], params_list)
+
+    def _batch_update_orders(self, params_list):
+        q = TXN_QUERIES["DELIVERY"]
+        self.cursor.executemany(q["updateOrders"], params_list)
+
+    def _batch_update_order_lines(self, params_list):
+        q = TXN_QUERIES["DELIVERY"]
+        self.cursor.executemany(q["updateOrderLine"], params_list)
+
+    def _batch_update_customers(self, params_list):
+        q = TXN_QUERIES["DELIVERY"]
+        self.cursor.executemany(q["updateCustomer"], params_list)
+
+    ## ----------------------------------------------
     ## doDelivery
     ## ----------------------------------------------
     def doDelivery(self, params):
@@ -189,31 +260,56 @@ class BaselinemysqlDriver(AbstractDriver):
         o_carrier_id = params["o_carrier_id"]
         ol_delivery_d = params["ol_delivery_d"]
 
+        self.cursor.execute(q["getNewOrdersBatch"], [w_id])
+        new_orders = self.cursor.fetchall()
+        if not new_orders:
+            self.conn.commit()
+            return []
+
+        pairs_placeholders = ",".join(["(%s, %s)"] * len(new_orders))
+        flattened_pairs = []
+        for d_id, no_o_id in new_orders:
+            flattened_pairs.extend([d_id, no_o_id])
+
+        query_cids = q["getCustomersBatch"].replace("__IN_CLAUSE__", f"({pairs_placeholders})")
+        self.cursor.execute(query_cids, [w_id] + flattened_pairs)
+        customer_ids = {(row[0], row[1]): row[2] for row in self.cursor.fetchall()}
+
+        query_sums = q["sumOLAmountsBatch"].replace("__IN_CLAUSE__", f"({pairs_placeholders})")
+        self.cursor.execute(query_sums, [w_id] + flattened_pairs)
+        ol_sums = {(row[0], row[1]): row[2] for row in self.cursor.fetchall()}
+
+        delete_new_orders = []
+        update_orders = []
+        update_order_lines = []
+        update_customers = []
         result = []
-        for d_id in range(1, constants.DISTRICTS_PER_WAREHOUSE + 1):
-            self.cursor.execute(q["getNewOrder"], [d_id, w_id])
-            newOrder = self.cursor.fetchone()
-            if newOrder is None:
+
+        for d_id, no_o_id in new_orders:
+            c_id = customer_ids.get((d_id, no_o_id))
+            ol_total = ol_sums.get((d_id, no_o_id))
+
+            if c_id is None or ol_total is None:
                 continue
-            assert len(newOrder) > 0
-            no_o_id = newOrder[0]
-
-            self.cursor.execute(q["getCId"], [no_o_id, d_id, w_id])
-            c_id = self.cursor.fetchone()[0]
-
-            self.cursor.execute(q["sumOLAmount"], [no_o_id, d_id, w_id])
-            ol_total = self.cursor.fetchone()[0]
-
-            self.cursor.execute(q["deleteNewOrder"], [d_id, w_id, no_o_id])
-            self.cursor.execute(q["updateOrders"], [o_carrier_id, no_o_id, d_id, w_id])
-            self.cursor.execute(q["updateOrderLine"], [ol_delivery_d, no_o_id, d_id, w_id])
 
             assert ol_total is not None, "ol_total is NULL: there are no order lines. This should not happen"
             assert ol_total > 0.0
 
-            self.cursor.execute(q["updateCustomer"], [ol_total, c_id, d_id, w_id])
+            delete_new_orders.append((d_id, w_id, no_o_id))
+            update_orders.append((o_carrier_id, no_o_id, d_id, w_id))
+            update_order_lines.append((ol_delivery_d, no_o_id, d_id, w_id))
+            update_customers.append((ol_total, c_id, d_id, w_id))
 
             result.append((d_id, no_o_id))
+
+        if delete_new_orders:
+            self._batch_delete_new_orders(delete_new_orders)
+        if update_orders:
+            self._batch_update_orders(update_orders)
+        if update_order_lines:
+            self._batch_update_order_lines(update_order_lines)
+        if update_customers:
+            self._batch_update_customers(update_customers)
 
         self.conn.commit()
         return result
@@ -237,28 +333,26 @@ class BaselinemysqlDriver(AbstractDriver):
         assert len(i_ids) == len(i_qtys)
 
         all_local = True
-        items = []
         for i in range(len(i_ids)):
             all_local = all_local and i_w_ids[i] == w_id
-            self.cursor.execute(q["getItemInfo"], [i_ids[i]])
-            items.append(self.cursor.fetchone())
+
+        items = self._batch_items(i_ids)
         assert len(items) == len(i_ids)
 
         for item in items:
             if len(item) == 0:
                 return
 
-        self.cursor.execute(q["getWarehouseTaxRate"], [w_id])
-        w_tax = self.cursor.fetchone()[0]
-
-        self.cursor.execute(q["getDistrict"], [d_id, w_id])
-        district_info = self.cursor.fetchone()
-        d_tax = district_info[0]
-        d_next_o_id = district_info[1]
-
-        self.cursor.execute(q["getCustomer"], [w_id, d_id, c_id])
-        customer_info = self.cursor.fetchone()
-        c_discount = customer_info[0]
+        self.cursor.execute(q["getWarehouseDistrictCustomer"], [d_id, c_id, w_id])
+        joined_info = self.cursor.fetchone()
+        
+        w_tax = joined_info[0]
+        d_tax = joined_info[1]
+        d_next_o_id = joined_info[2]
+        c_discount = joined_info[3]
+        c_last = joined_info[4]
+        c_credit = joined_info[5]
+        customer_info = (c_discount, c_last, c_credit)
 
         ol_cnt = len(i_ids)
         o_carrier_id = constants.NULL_CARRIER_ID
@@ -267,8 +361,13 @@ class BaselinemysqlDriver(AbstractDriver):
         self.cursor.execute(q["createOrder"], [d_next_o_id, d_id, w_id, c_id, o_entry_d, o_carrier_id, ol_cnt, all_local])
         self.cursor.execute(q["createNewOrder"], [d_next_o_id, d_id, w_id])
 
+        stock_rows = self._batch_stock_info(d_id, i_ids, i_w_ids)
+
         item_data = []
         total = 0
+        update_stock_params = []
+        create_order_line_params = []
+
         for i in range(len(i_ids)):
             ol_number = i + 1
             ol_supply_w_id = i_w_ids[i]
@@ -280,17 +379,17 @@ class BaselinemysqlDriver(AbstractDriver):
             i_data = itemInfo[2]
             i_price = itemInfo[0]
 
-            self.cursor.execute(q["getStockInfo"] % (d_id), [ol_i_id, ol_supply_w_id])
-            stockInfo = self.cursor.fetchone()
-            if len(stockInfo) == 0:
+            stockInfo = stock_rows.get((ol_i_id, ol_supply_w_id))
+            if stockInfo is None:
                 logging.warn("No STOCK record for (ol_i_id=%d, ol_supply_w_id=%d)" % (ol_i_id, ol_supply_w_id))
                 continue
-            s_quantity = stockInfo[0]
-            s_ytd = stockInfo[2]
-            s_order_cnt = stockInfo[3]
-            s_remote_cnt = stockInfo[4]
-            s_data = stockInfo[1]
-            s_dist_xx = stockInfo[5]
+
+            s_quantity = stockInfo[2]
+            s_ytd = stockInfo[4]
+            s_order_cnt = stockInfo[5]
+            s_remote_cnt = stockInfo[6]
+            s_data = stockInfo[3]
+            s_dist_xx = stockInfo[7]
 
             s_ytd += ol_quantity
             if s_quantity >= ol_quantity + 10:
@@ -302,7 +401,7 @@ class BaselinemysqlDriver(AbstractDriver):
             if ol_supply_w_id != w_id:
                 s_remote_cnt += 1
 
-            self.cursor.execute(q["updateStock"], [s_quantity, s_ytd, s_order_cnt, s_remote_cnt, ol_i_id, ol_supply_w_id])
+            update_stock_params.append((s_quantity, s_ytd, s_order_cnt, s_remote_cnt, ol_i_id, ol_supply_w_id))
 
             if i_data.find(constants.ORIGINAL_STRING) != -1 and s_data.find(constants.ORIGINAL_STRING) != -1:
                 brand_generic = 'B'
@@ -312,9 +411,14 @@ class BaselinemysqlDriver(AbstractDriver):
             ol_amount = ol_quantity * i_price
             total += ol_amount
 
-            self.cursor.execute(q["createOrderLine"], [d_next_o_id, d_id, w_id, ol_number, ol_i_id, ol_supply_w_id, o_entry_d, ol_quantity, ol_amount, s_dist_xx])
+            create_order_line_params.append((d_next_o_id, d_id, w_id, ol_number, ol_i_id, ol_supply_w_id, o_entry_d, ol_quantity, ol_amount, s_dist_xx))
 
             item_data.append((i_name, s_quantity, brand_generic, i_price, ol_amount))
+
+        if update_stock_params:
+            self._batch_update_stock(update_stock_params)
+        if create_order_line_params:
+            self._batch_insert_order_lines(create_order_line_params)
 
         self.conn.commit()
 
@@ -352,12 +456,14 @@ class BaselinemysqlDriver(AbstractDriver):
         assert len(customer) > 0
         assert c_id is not None
 
-        self.cursor.execute(q["getLastOrder"], [w_id, d_id, c_id])
-        order = self.cursor.fetchone()
-        if order:
-            self.cursor.execute(q["getOrderLines"], [w_id, d_id, order[0]])
-            orderLines = self.cursor.fetchall()
+        self.cursor.execute(q["getLastOrderAndOrderLines"], [w_id, d_id, c_id, w_id, d_id, c_id])
+        rows = self.cursor.fetchall()
+
+        if rows:
+            order = (rows[0][0], rows[0][1], rows[0][2])
+            orderLines = [r[3:8] for r in rows]
         else:
+            order = None
             orderLines = []
 
         self.conn.commit()
@@ -379,27 +485,30 @@ class BaselinemysqlDriver(AbstractDriver):
         h_date = params["h_date"]
 
         if c_id is not None:
-            self.cursor.execute(q["getCustomerByCustomerId"], [w_id, d_id, c_id])
-            customer = self.cursor.fetchone()
+            self.cursor.execute(q["getWarehouseDistrictCustomer"], [w_id, d_id, c_w_id, c_d_id, c_id])
+            joined_info = self.cursor.fetchone()
+            warehouse = joined_info[0:6]
+            district = joined_info[6:12]
+            customer = joined_info[12:]
         else:
-            self.cursor.execute(q["getCustomersByLastName"], [w_id, d_id, c_last])
+            self.cursor.execute(q["getCustomersByLastName"], [c_w_id, c_d_id, c_last])
             all_customers = self.cursor.fetchall()
             assert len(all_customers) > 0
             namecnt = len(all_customers)
             index = (namecnt - 1) // 2
             customer = all_customers[index]
             c_id = customer[0]
+
+            self.cursor.execute(q["getWarehouseAndDistrict"], [w_id, d_id])
+            joined_info = self.cursor.fetchone()
+            warehouse = joined_info[0:6]
+            district = joined_info[6:12]
+
         assert len(customer) > 0
         c_balance = customer[14] - h_amount
         c_ytd_payment = customer[15] + h_amount
         c_payment_cnt = customer[16] + 1
         c_data = customer[17]
-
-        self.cursor.execute(q["getWarehouse"], [w_id])
-        warehouse = self.cursor.fetchone()
-
-        self.cursor.execute(q["getDistrict"], [w_id, d_id])
-        district = self.cursor.fetchone()
 
         self.cursor.execute(q["updateWarehouseBalance"], [h_amount, w_id])
         self.cursor.execute(q["updateDistrictBalance"], [h_amount, w_id, d_id])
@@ -431,12 +540,7 @@ class BaselinemysqlDriver(AbstractDriver):
         d_id = params["d_id"]
         threshold = params["threshold"]
 
-        self.cursor.execute(q["getOId"], [w_id, d_id])
-        result = self.cursor.fetchone()
-        assert result
-        o_id = result[0]
-
-        self.cursor.execute(q["getStockCount"], [w_id, d_id, o_id, (o_id - 20), w_id, threshold])
+        self.cursor.execute(q["getStockCount"], [w_id, d_id, w_id, d_id, w_id, d_id, w_id, threshold])
         result = self.cursor.fetchone()
 
         self.conn.commit()
