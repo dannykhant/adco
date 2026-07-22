@@ -147,10 +147,12 @@
     cur.execute(f"SELECT I_ID, I_PRICE, I_NAME, I_DATA FROM ITEM WHERE I_ID IN ({placeholders})",
                 i_ids)
     item_rows = {r[0]: r for r in cur.fetchall()}
-    cur.execute(f"""SELECT S_I_ID, S_QUANTITY, S_YTD, S_ORDER_CNT, S_REMOTE_CNT, S_DATA,
+    stock_pairs = list(zip(i_ids, i_w_ids))
+    stock_placeholders = ','.join(['(%s,%s)'] * len(stock_pairs))
+    cur.execute(f"""SELECT S_I_ID, S_W_ID, S_QUANTITY, S_YTD, S_ORDER_CNT, S_REMOTE_CNT, S_DATA,
                            S_DIST_{d_id:02d}
-                    FROM STOCK WHERE (S_I_ID, S_W_ID) IN ({placeholders})""",
-                list(zip(i_ids, i_w_ids)))
+                    FROM STOCK WHERE (S_I_ID, S_W_ID) IN ({stock_placeholders})""",
+                [v for pair in stock_pairs for v in pair])
     stock_rows = {(r[0], r[1]): r for r in cur.fetchall()}
     ```
     Replacing N individual queries with two set-based `IN (...)` queries eliminates N-2 round-trips and allows MySQL's executor to scan ITEM and STOCK in parallel across multiple cores.
