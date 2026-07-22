@@ -2,13 +2,20 @@
 SHELL := /bin/bash
 
 # Define shortcuts/tasks that do not generate output files
-.PHONY: gen run genrun test cleancandidates cleanall
+.PHONY: gen run genrun gen-generic test-unit test-tpcc clean clean-all
 
 MODEL ?= gemini-2.5-flash
+OUTPUT := tpcc/drivers
+
+# TPC-C driver files
+TARGET  := tpcc/drivers/mysqldriver.py
+SUPPORT := tpcc/drivers/abstractdriver.py tpcc/constants.py tpcc/tpcc.py
 
 gen:
-	@echo "Generating driver..."
-	uv run python engine/main.py --model=$(MODEL)
+	@echo "Generating optimized driver..."
+	uv run python -m engine.main $(TARGET) \
+		$(addprefix --with ,$(SUPPORT)) \
+		--output-dir=$(OUTPUT) --model=$(MODEL)
 
 run:
 	$(eval DRIVER := $(filter-out $@,$(MAKECMDGOALS)))
@@ -22,10 +29,19 @@ run:
 		--clients=1
 
 gen-run:
-	@stem=$$(uv run python engine/main.py --print-name --model=$(MODEL)); \
 	$(MAKE) gen MODEL=$(MODEL) && \
-	echo "Running $$stem..." && \
-	$(MAKE) run $$stem
+	echo "Running latest generated driver..." && \
+	$(MAKE) run gemini-optimized
+
+# Generic mode: optimize any file
+gen-generic:
+	@echo "Usage: make gen-generic TARGET=<file> [SUPPORT='file1 file2']"
+	@echo "Example: make gen-generic TARGET=./myproject/db.py SUPPORT='./myproject/models.py ./myproject/config.py'"
+	@if [ -z "$(TARGET)" ]; then \
+		echo "ERROR: TARGET is required"; \
+		exit 1; \
+	fi
+	uv run python -m engine.main $(TARGET) $(addprefix --with ,$(SUPPORT)) --model=$(MODEL)
 
 # Prevent Make from erroring on extra args
 %:
@@ -41,9 +57,9 @@ test-tpcc:
 	@echo "Tests completed."
 
 test-unit:
-	@echo "Running unit tests..."
-	uv run pytest tests/ -v
-	@echo "Unit tests completed."
+	@echo "Running AST-based checker on latest generated driver..."
+	uv run python tests/ast_checker.py --auto --verbose
+	@echo "AST-based test completed."
 
 clean:
 	@echo "Dropping candidates database..."

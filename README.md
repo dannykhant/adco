@@ -1,43 +1,58 @@
-# adco
+# adco — Application-Database Co-design
 
-Evaluates whether LLM-generated query rewrites can produce **correct and faster** SQL for TPC-C transactional queries compared to a handwritten baseline and a human-optimized v2 reference. Extends [`apavlo/py-tpcc`](https://github.com/apavlo/py-tpcc) with:
+Application-Database Co-design (ADCo): jointly analyze **application code** and **database interactions** to find optimization opportunities invisible to either layer in isolation.
 
-- **Query Rewrite Engine** (`engine/main.py`) — one-shot generation of complete optimized MySQL drivers via Gemini
-- Four MySQL drivers: `baselinemysql` (baseline), `deepseekv4flashmysql` (v1), `deepseekv4flashmysqlv2` (v2), and generated `candidates` drivers
-- Side-by-side benchmark comparison (throughput, latency, per-transaction timing)
-- Record-and-replay correctness verification across all drivers (same params, compared to baseline)
-- Full query documentation with per-transaction SQL and round-trip comparison
+Scan any codebase, detect DB interactions, extract intent, apply rewrite strategies from the knowledge base, and generate optimized code. TPC-C benchmark is a built-in test case — running without arguments auto-detects the baseline MySQL driver and applies TPC-C-specific rules and validation.
+
+```mermaid
+flowchart TD
+    A[("Source Codebase")] --> B["Scanner"]
+    B --> C["Intent Extraction<br/>LLM #1"]
+    KB[("Rewrite Strategy<br/>Knowledge Base")] --> D["Rewrite Planner"]
+    C --> D
+    D --> E["Code Generator<br/>LLM #2"]
+    E --> F["Verifier"]
+    F --> G["Optimized Codebase"]
+```
 
 ## Project Structure
 
 | Path | Purpose |
 |------|---------|
-| `engine/main.py` | **Query Rewrite Engine** — one-shot full driver generation via Gemini |
+| `engine/main.py` | **Entry point** — TPC-C preset (default) or generic pipeline |
+| `engine/scanner.py` | **Scanner** — walks codebase, detects SQL strings, `cursor.execute()`, ORM calls, connection strings |
+| `engine/extractor.py` | **Intent Extractor** — **LLM call #1**: analyzes scanned code, returns structured intent |
+| `engine/intent.py` | **Intent data structures** — `IntentSpec`, `TransactionIntent`, `QueryIntent` |
+| `engine/planner.py` | **Planner** — parses KB strategies, maps intent → rewrite plan |
+| `engine/generator.py` | **Generator** — **LLM call #2**: builds dynamic prompt from scan + extracted intent + plan + KB |
+| `engine/verifier.py` | **Verifier** — compile check, extensible validation |
+| `engine/pipeline.py` | **Pipeline orchestrator** — ties scanner → extractor → planner → generator → verifier |
 | `engine/.env` | `GOOGLE_API_KEY` for Gemini |
-| `Makefile` | Workflow targets: `gen`, `run`, `genrun`, `test`, `clean` |
+| `Makefile` | Workflow targets: `gen`, `run`, `genrun`, `gen-generic`, `test-*`, `clean*` |
 | `AGENTS.md` | Full project context, architecture patterns, known bugs |
+| `docs/kb/query_rewrite_methods.md` | Knowledge base: 5 rewrite strategies with TPC-C from→to examples |
+| `docs/queries/` | Full SQL comparison across all drivers for all 5 transactions |
 | `tpcc/drivers/baselinemysqldriver.py` | Baseline — one query at a time, per TPC-C spec |
-| `tpcc/drivers/deepseekv4flashmysqlv2driver.py` | v2 — handwritten optimized reference (used as copy-paste example in prompt) |
+| `tpcc/drivers/deepseekv4flashmysqlv2driver.py` | v2 — handwritten optimized reference |
 | `tpcc/drivers/*driver.py` | Generated candidate drivers |
 | `tpcc/scripts/correctness_check.py` | Record-and-replay correctness verification |
-| `tpcc/runtime/executor.py` | TPC-C workload generator — generates random transaction params |
+| `tpcc/runtime/executor.py` | TPC-C workload generator |
 | `tpcc/constants.py` | All TPC-C constants |
 | `tpcc/tpcc.py` | Main benchmark entry point |
-| `docs/kb/query_rewrite_methods.md` | Knowledge base: 5 rewrite strategies (COMBINING_QUERIES, PREDICATE_PUSHDOWN, JOIN_ORDER_HINTS, SEPARATING_QUERIES, CONCURRENCY) with TPC-C from→to examples |
-| `docs/queries/queries_20260715_0930.md` | Full SQL comparison across all drivers for all 5 transactions |
-| `tpcc/configs/mysql.config` | MySQL connection configs (all drivers in one file) |
+| `tpcc/configs/mysql.config` | MySQL connection configs |
 | `mysql/docker-compose.yml` | MySQL 5.7 container |
 
 ## Make Targets
 
 | Target | Description |
 |--------|-------------|
-| `make gen` | Generate driver with default model |
+| `make gen` | Generate TPC-C driver with default model |
 | `make gen MODEL=gemini-2.5-flash` | Generate with a custom model |
-| `make run <driver>` | Benchmark a driver (10s, no load, 1 client) |
+| `make gen-generic GENERIC_PATH=./project` | Optimize any codebase generically |
+| `make run <driver>` | Benchmark a TPC-C driver (10s, no load, 1 client) |
 | `make gen-run` | Generate + benchmark in one step |
-| `make test` | Integration test (MySQL required) |
-| `make test-unit` | Unit tests (no MySQL needed) |
+| `make test-unit`| AST-based static checks (no MySQL needed) |
+| `make test-tpcc`| TPC-C integration test (MySQL required) |
 | `make clean` | Drop only `tpcc-candidates` database |
 | `make clean-all` | Drop all TPC-C databases |
 
@@ -47,25 +62,32 @@ Model variable defaults to `gemini-2.5-flash`.
 
 ### Generate an Optimized Driver
 
-One-shot generation: reads the baseline driver and KB rewrite strategies, sends to Gemini with the v2 driver as an example, and writes a complete driver file.
+The engine auto-detects TPC-C when the input is the baseline driver — injecting TPC-C-specific rules and validation. Any other codebase runs through the generic pipeline with KB strategies.
 
 ```bash
-# Generate with default model (gemini-2.5-flash)
+# TPC-C: generate with default model
 make gen
 
-# Generate with a different model
+# TPC-C: custom model
 make gen MODEL=gemini-2.5-pro
 
+# Generic: optimize any codebase
+make gen-generic GENERIC_PATH=./my-project
+
 # Dry-run (inspect prompt without calling API)
-uv run python engine/main.py --dry-run
+uv run python -m engine.main --dry-run
 
 # Just print the output filename stem
-uv run python engine/main.py --print-name
+uv run python -m engine.main --print-name
+
+# Specify codebase path + output directory
+uv run python -m engine.main ./my-project --output-dir=./optimized
 ```
 
+**Note**: Must use `python -m engine.main` (not `python engine/main.py`) for module imports.
 Output file: `tpcc/drivers/{model_name}_{timestamp}driver.py`.
 
-### Benchmark a Driver
+### Benchmark a TPC-C Driver
 
 ```bash
 # Run candidates driver (generated)
@@ -95,18 +117,18 @@ uv run python tpcc/tpcc.py baselinemysql --config=tpcc/configs/mysql.config --wa
 
 ## Running Tests
 
-### Unit Tests (no MySQL needed)
+### AST-Based Static Checker (no MySQL needed)
 
-Tests the generated driver's structure, SQL patterns, and transaction return values using mocked MySQL cursor/connection.
+Analyses the generated driver's source code using `ast.parse()` + source text patterns to detect correctness issues without executing any code. Covers 12 checks.
 
 ```bash
 make test-unit
-```
 
-Picks the latest `gemini*driver.py` automatically. Override with:
-
-```bash
-TEST_DRIVER=gemini_2_5_flash_20260717_1004 uv run pytest tests/ -v
+# Or directly:
+uv run python tests/ast_checker.py --auto            # latest gemini driver
+uv run python tests/ast_checker.py --driver <path>   # specific file
+uv run python tests/ast_checker.py --auto --verbose  # show details
+uv run python tests/ast_checker.py --auto --json     # machine-readable
 ```
 
 ### Integration Test (MySQL required)
@@ -114,75 +136,58 @@ TEST_DRIVER=gemini_2_5_flash_20260717_1004 uv run pytest tests/ -v
 Record-and-replay correctness verification across all databases.
 
 ```bash
-make test
-
-# Or directly:
-uv run python tpcc/scripts/correctness_check.py \
-    --config=configs/mysql.config \
-    --config2=configs/mysql.config \
-    --config3=configs/mysql.config \
-    --warehouses=4 --transactions=500
+make test-tpcc
 ```
 
 Requires all MySQL databases to be loaded with identical data (same RNG state). See `AGENTS.md` for details.
 
-## Config Files
+## Pipeline Architecture
 
-Single config file with driver-specific sections:
+The engine (`engine/pipeline.py`) uses a unified pipeline for all codebases:
+
+1. **Scanner** (`scanner.py`) — walks the codebase, detects DB interactions via regex patterns, and produces a `CodebaseProfile` (db_type, db_api, tags like `tpcc`)
+2. **Intent Extractor** (`extractor.py`) — **LLM call #1**: analyzes the scanned code and returns a structured `IntentSpec` (transactions, queries, dataflow, round-trip counts)
+3. **Planner** (`planner.py`) — parses KB strategies from `docs/kb/query_rewrite_methods.md`, maps extracted intent → rewrite plan
+4. **Generator** (`generator.py`) — **LLM call #2**: builds a dynamic prompt from scan + extracted intent + plan + KB, generates optimized code
+5. **Verifier** (`verifier.py`) — compile check + extensible validators
+
+### TPC-C Auto-Detection
+
+The scanner detects TPC-C from code content (table names WAREHOUSE/DISTRICT/CUSTOMER, method signatures doDelivery/doNewOrder, TXN_QUERIES dict, or `from tpcc` imports). When `tpcc` is in the profile tags, the engine injects TPC-C-specific rules into the generation prompt and applies TPC-C-specific validation (5 transaction methods, TXN_QUERIES dict, 4 required batch helpers).
+
+## Rewrite Strategies
+
+Five strategies from `docs/kb/query_rewrite_methods.md`:
+
+| Strategy | Description |
+|----------|-------------|
+| COMBINING_QUERIES | Merge N sequential queries into one (JOINs, IN clauses, batch writes) |
+| PREDICATE_PUSHDOWN | Filter early — derived tables before joins reduce scan size |
+| JOIN_ORDER_HINTS | STRAIGHT_JOIN to force known-efficient join order |
+| SEPARATING_QUERIES | Split monolithic queries into independent steps |
+| CONCURRENCY | Set-based IN clauses replace per-item loops |
+
+## Config File Format
 
 ```ini
-[baselinemysql]
+[driver-name]
 host = 127.0.0.1
 port = 3306
 user = root
 password = your_password
 database = tpcc-baseline
-
-[deepseekv4flashmysqlv2]
-host = 127.0.0.1
-port = 3306
-user = root
-password = your_password
-database = tpcc-deepseekv4flashv2
-
-[candidates]
-host = 127.0.0.1
-port = 3306
-user = root
-password = your_password
-database = tpcc-candidates
 ```
 
-## How the Engine Works
-
-1. **Reads** the baseline driver, v2 reference driver, and KB rewrite strategies from file
-2. **Builds a prompt** structured as: KB strategies (5 abstract methods with from→to examples) → v2 example → baseline to optimize → output rules
-3. **Calls Gemini** (`genai.Client().models.generate_content()`) with a one-shot prompt
-4. **Validates** output for required methods (5 transaction methods), TXN_QUERIES, and 4 batch helpers
-5. **Writes** the complete driver file to `tpcc/drivers/`
-
-Generated drivers use the `[candidates]` config section (database `tpcc-candidates`).
-
-## Round-Trip Reduction (v2 vs Baseline)
-
-| Transaction | Baseline | v2 |
-|---|---|---|
-| DELIVERY (10 districts) | 70 | **5** |
-| NEW_ORDER (N=10) | 46 | **8** |
-| ORDER_STATUS (by c_id) | 3 | **1** |
-| ORDER_STATUS (by c_last) | 3 | **2** |
-| PAYMENT (by c_id) | 7 | **5** |
-| PAYMENT (by c_last) | 7 | **6** |
-| STOCK_LEVEL | 2 | **1** |
+Generated drivers use `[candidates]` (database `tpcc-candidates`).
 
 ## Extending
 
-To add a new driver manually:
+To add a new TPC-C driver manually:
 1. Create `tpcc/drivers/<name>driver.py` with a class `<Name>Driver(AbstractDriver)`
 2. Add a `[<name>]` section to `tpcc/configs/mysql.config`
 
-To generate a driver with the engine: `make gen MODEL=<model_id>`.
+To optimize a new codebase generically: `make gen-generic GENERIC_PATH=<path>`.
 
 ## Credits
 
-Based on the original [`apavlo/py-tpcc`](https://github.com/apavlo/py-tpcc) by Andy Pavlo and contributors. Extended for LLM-generated query optimization benchmarking.
+Based on the original [`apavlo/py-tpcc`](https://github.com/apavlo/py-tpcc) by Andy Pavlo and contributors. Extended for LLM-generated query optimization benchmarking and generic application-database co-optimization.

@@ -221,3 +221,5 @@ __marimo__/
 
 # Project-specific virtual environment
 *.config
+proposal.txt
+.agents
