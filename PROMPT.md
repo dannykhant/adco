@@ -37,6 +37,7 @@ Key constraints:
 - Exact param keys only (params["w_id"] → w_id, never w_w_id)
 - No window functions (MySQL 5.7)
 - Dynamic IN clauses use __IN_CLAUSE__ marker approach
+- Batch INSERT/UPDATE/DELETE writes use `cursor.executemany(full_template, params_list)`; never pass a raw comma-separated tuple string like `(%s,%s),(%s,%s)` as the SQL
 - TXN_QUERIES dict must be preserved with top-level transaction keys
 
 Run tests: uv run python tests/ast_checker.py --auto

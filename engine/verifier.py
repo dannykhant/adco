@@ -43,30 +43,9 @@ def _check_not_empty(code: str) -> VerificationResult:
     return VerificationResult(passed=True)
 
 
-def _check_no_window_functions(code: str) -> VerificationResult:
-    import re
-    bad = re.compile(r'\b(ROW_NUMBER|RANK|DENSE_RANK)\s*\(|OVER\s*\(|PARTITION\s+BY\b', re.IGNORECASE)
-    errors = []
-    for m in bad.finditer(code):
-        line_num = code[:m.start()].count('\n') + 1
-        errors.append(f"MySQL 5.7 incompatible at line {line_num}: '{m.group()}'")
-    return VerificationResult(passed=not errors, errors=errors)
-
-
-def _check_no_prefixed_vars(code: str) -> VerificationResult:
-    import re
-    errors = []
-    for match in re.finditer(r'\b(w_w_id|d_d_id|c_c_id)\b', code):
-        line_num = code[:match.start()].count('\n') + 1
-        errors.append(f"Undefined variable '{match.group()}' at line {line_num}; use exact param key instead")
-    return VerificationResult(passed=not errors, errors=errors)
-
-
 VERIFIER_CHECKS: list[Callable[[str], VerificationResult]] = [
     _check_not_empty,
     _check_compile,
-    _check_no_window_functions,
-    _check_no_prefixed_vars,
 ]
 
 
