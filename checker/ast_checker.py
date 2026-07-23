@@ -58,6 +58,20 @@ Choose the SINGLE most applicable category if the code will fail:
 3. **db_error**: A database operation will raise an exception at runtime. This includes:
    - **Placeholder mismatch**: `cursor.execute(sql, params)` has fewer/more `%s` (or `?`)
      placeholders than params elements. Will raise ProgrammingError.
+   - **Python % formatting error**: SQL template strings that use Python `%` formatting
+     (e.g. `"S_DIST_%02d"`, `"SELECT ... WHERE id IN (%s)"`) must be called with matching
+     arguments via the `%` operator. If a template has `%s` or `%d` but is used with
+     `cursor.execute(template, params)` without first formatting, or if `template % args`
+     has mismatched argument count, it will raise "not enough arguments for format string".
+     Trace ALL `%` operations on SQL strings — if a string contains `%s`, `%d`, `%02d`,
+     `%%s`, or any `%`-based format specifier, verify that when it is eventually passed
+     to `cursor.execute()`, every `%` token is either:
+       (a) paired with a matching argument in a `%` format operation, OR
+       (b) properly escaped as `%%` if intended as a literal `cursor.execute` placeholder.
+     WARNING: the `getStockInfo` pattern `"SELECT ... S_DIST_%02d FROM STOCK WHERE S_I_ID = %%s AND S_W_ID = %%s"`
+     is especially dangerous — the `%02d` consumes one arg, and the `%%s` become `%s` for
+     cursor.execute. Count the `%` format args carefully against the values provided in
+     the call like `q["getStockInfo"] % (d_id)`.
    - **Unreplaced marker**: The SQL string contains unreplaced template markers like
      `__IN_CLAUSE__`, `__MARKER__`, or similar sentinels. Will cause SQL syntax error.
    - **DB version incompatibility**: The SQL uses features unavailable in the target
@@ -117,6 +131,8 @@ __CODE__
 # ---------------------------------------------------------------------------
 # Data model
 # ---------------------------------------------------------------------------
+ADCO_RUN_ID_RE = re.compile(r"# ADCO_RUN_ID: ([a-f0-9-]+)")
+
 @dataclass
 class CheckResult:
     """True = code is predicted to fail or be problematic."""
@@ -148,50 +164,86 @@ def _check_syntax(code: str) -> tuple[bool, str]:
 
 
 # ---------------------------------------------------------------------------
-# LLM call
+# LLM call — returns (result_dict, input_tokens, output_tokens, usage_metadata)
 # ---------------------------------------------------------------------------
-def _call_llm(code: str, model_name: str) -> dict:
+def _call_llm(code: str, model_name: str) -> tuple[dict, int, int, object]:
+    import time
     from google import genai
 
     client = genai.Client()
     prompt = CHECKER_PROMPT.replace("__CODE__", code[:32000])
-    response = client.models.generate_content(model=model_name, contents=prompt)
-    text = response.text.strip()
 
+    t0 = time.time()
+    response = client.models.generate_content(model=model_name, contents=prompt)
+    llm_ms = int((time.time() - t0) * 1000)
+
+    usage = getattr(response, "usage_metadata", None)
+
+    text = response.text.strip()
     json_match = re.search(r"\{[\s\S]*\}", text)
     if json_match:
-        return json.loads(json_match.group(0))
-    return {"failure": True, "category": "not_executable", "reason": f"LLM returned unparseable response: {text[:200]}"}
+        return json.loads(json_match.group(0)), usage
+    return {"failure": True, "category": "not_executable", "reason": f"LLM returned unparseable response: {text[:200]}"}, usage
 
 
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
-def check_code(code: str, model_name: str = "gemini-2.5-flash") -> CheckResult:
+def check_code(code: str, model_name: str = "gemini-2.5-flash", telemetry_run=None) -> CheckResult:
+    import time
+
     if not code.strip():
-        return CheckResult(
+        result = CheckResult(
             failure=True, reason="Empty code", category="not_executable",
             guardrail_failed=True,
         )
+        if telemetry_run:
+            telemetry_run.record_check(status="FAIL", reason=result.reason)
+        return result
 
+    t0 = time.time()
     passed, error = _check_syntax(code)
+    guardrail_ms = int((time.time() - t0) * 1000)
+
     if not passed:
-        return CheckResult(
+        result = CheckResult(
             failure=True, reason=error, category="not_executable",
             guardrail_failed=True,
         )
+        if telemetry_run:
+            telemetry_run.record_check(status="FAIL", reason=result.reason)
+        return result
 
-    result = _call_llm(code, model_name)
-    return CheckResult(
-        failure=result.get("failure", False),
-        reason=result.get("reason", ""),
-        category=result.get("category", ""),
+    llm_result, usage = _call_llm(code, model_name)
+    result = CheckResult(
+        failure=llm_result.get("failure", False),
+        reason=llm_result.get("reason", ""),
+        category=llm_result.get("category", ""),
     )
 
+    if telemetry_run:
+        status = "PASS" if not result.failure else "FAIL"
+        telemetry_run.record_check(
+            status=status,
+            reason=result.reason,
+            usage_metadata=usage,
+        )
 
-def check_file(path: str, model_name: str = "gemini-2.5-flash") -> CheckResult:
+    return result
+
+
+def check_file(path: str, model_name: str = "gemini-2.5-flash", telemetry_run=None, engine_run_id: str = "") -> CheckResult:
     with open(path) as f:
-        return check_code(f.read(), model_name)
+        code = f.read()
+    run_id = _extract_run_id(code) or engine_run_id
+    if telemetry_run and run_id:
+        telemetry_run.engine_run_id = run_id
+    return check_code(code, model_name, telemetry_run=telemetry_run)
+
+
+def _extract_run_id(code: str) -> str:
+    m = ADCO_RUN_ID_RE.search(code)
+    return m.group(1) if m else ""
 
 
 def format_results(result: CheckResult) -> str:
@@ -214,6 +266,8 @@ def format_results_json(result: CheckResult) -> str:
 # CLI — mirrors engine/main.py style
 # ---------------------------------------------------------------------------
 def main():
+    from telemetry import TelemetryRun
+
     parser = argparse.ArgumentParser(
         description="ADCo — Correctness Checker. Predicts whether generated code will fail at runtime."
     )
@@ -252,7 +306,8 @@ def main():
     print(f"  Checking: {path}")
     print(f"  Model:    {args.model}")
 
-    result = check_file(path, model_name=args.model)
+    with TelemetryRun(run_type="checker", model_name=args.model) as run:
+        result = check_file(path, model_name=args.model, telemetry_run=run)
 
     if args.json:
         print(format_results_json(result))

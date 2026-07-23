@@ -223,7 +223,10 @@ def extract_intent(
     runner_path: str = "",
     target_path: str = "",
     dry_run: bool = False,
+    telemetry_run=None,
 ) -> IntentSpec:
+    import time
+
     prompt = _build_intent_prompt(tree, runner_content, file_contents, runner_path, target_path)
 
     if dry_run:
@@ -232,7 +235,18 @@ def extract_intent(
         print("=== END INTENT PROMPT ===")
         return IntentSpec(summary="(dry-run)", db_type="unknown", db_api="unknown", db_version="", support_summary="(dry-run)", runner_summary="(dry-run)")
 
+    t0 = time.time()
     response = client.models.generate_content(model=model_name, contents=prompt)
+    llm_ms = int((time.time() - t0) * 1000)
+
+    if telemetry_run:
+        usage = getattr(response, "usage_metadata", None)
+        telemetry_run.record_step(
+            step="intent_extractor",
+            duration_ms=llm_ms,
+            usage_metadata=usage,
+        )
+
     result = response.text.strip()
     intent = _parse_intent_response(result)
 

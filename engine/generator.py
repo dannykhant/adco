@@ -177,11 +177,25 @@ def generate_optimizations(
     model_name: str,
     client: "genai.Client",
     dry_run: bool = False,
+    telemetry_run=None,
 ) -> str:
+    import time
+
     if dry_run:
         return ""
 
+    t0 = time.time()
     response = client.models.generate_content(model=model_name, contents=prompt)
+    llm_ms = int((time.time() - t0) * 1000)
+
+    if telemetry_run:
+        usage = getattr(response, "usage_metadata", None)
+        telemetry_run.record_step(
+            step="code_generator",
+            duration_ms=llm_ms,
+            usage_metadata=usage,
+        )
+
     result = response.text.strip()
     if result.startswith("```"):
         result = result.split("\n", 1)[1]
@@ -189,6 +203,8 @@ def generate_optimizations(
         result = result.strip()
 
     with open(output_path, "w") as f:
+        if telemetry_run:
+            f.write(f"# ADCO_RUN_ID: {telemetry_run.run_id}\n")
         f.write(result)
         if not result.endswith("\n"):
             f.write("\n")
