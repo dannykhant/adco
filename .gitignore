@@ -223,3 +223,6 @@ __marimo__/
 *.config
 proposal.txt
 .agents
+telemetry/telemetry.db
+telemetry/telemetry.db-wal
+telemetry/telemetry.db-shm
