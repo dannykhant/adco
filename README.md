@@ -2,7 +2,7 @@
 
 Application-Database Co-design (ADCo): jointly analyze **application code** and **database interactions** to find optimization opportunities invisible to either layer in isolation.
 
-Scan any codebase, detect DB interactions, extract intent, apply rewrite strategies from the knowledge base, and generate optimized code. TPC-C benchmark is a built-in test case — running without arguments auto-detects the baseline MySQL driver and applies TPC-C-specific rules and validation.
+Scan any codebase, detect DB interactions, extract intent, apply rewrite strategies from the knowledge base, and generate optimized code. TPC-C benchmark serves as a built-in test case.
 
 ```mermaid
 flowchart TD
@@ -12,32 +12,34 @@ flowchart TD
     C --> D
     D --> E["Code Generator<br/>LLM #2"]
     E --> F["Verifier"]
-    F --> G["Checker<br/>LLM #3"]
-    G --> H["Optimized Codebase"]
+    F --> G["Optimized Codebase"]
+    G --> H["Checker<br/>LLM #3"]
 ```
 
 ## Project Structure
 
 | Path | Purpose |
 |------|---------|
-| `engine/main.py` | **Entry point** — TPC-C preset (default) or generic pipeline |
-| `engine/scanner.py` | **Scanner** — walks codebase, detects SQL strings, `cursor.execute()`, ORM calls, connection strings |
-| `engine/extractor.py` | **Intent Extractor** — **LLM call #1**: analyzes scanned code, returns structured intent |
+| `engine/main.py` | **Engine entry point** — generic pipeline with CLI |
+| `engine/scanner.py` | **Scanner** — walks codebase, builds project tree, lists source files |
+| `engine/extractor.py` | **Intent Extractor** — **LLM call #1**: analyzes scanned code, returns structured `IntentSpec` |
 | `engine/intent.py` | **Intent data structures** — `IntentSpec`, `TransactionIntent`, `QueryIntent` |
 | `engine/planner.py` | **Planner** — parses KB strategies, maps intent → rewrite plan |
-| `engine/generator.py` | **Generator** — **LLM call #2**: builds dynamic prompt from scan + extracted intent + plan + KB |
+| `engine/generator.py` | **Generator** — **LLM call #2**: builds prompt from scan + intent + plan + KB |
 | `engine/verifier.py` | **Verifier** — compile check, extensible validation |
-| `engine/pipeline.py` | **Pipeline orchestrator** — ties scanner → extractor → planner → generator → verifier |
-| `engine/.env` | `GOOGLE_API_KEY` for Gemini |
-| `checker/ast_checker.py` | **Checker** — LLM-based correctness checker with static guardrail |
-| `checker/__main__.py` | Checker CLI entry point |
-| `Makefile` | Workflow targets: `gen`, `run`, `check`, `gen-run`, `clean` |
+| `engine/pipeline.py` | **Pipeline orchestrator** — 5 steps: scanner → intent_extractor → planner → code_generator → verifier |
+| `engine/.env` | `GOOGLE_API_KEY`, project, location, vertex config for Gemini |
+| `checker/ast_checker.py` | **Checker** — LLM-based correctness checker with structured output + static guardrail |
+| `checker/__main__.py` | Checker CLI trampoline |
+| `telemetry/` | SQLite-backed telemetry for engine, checker, and TPC-C runs (5 tables) |
+| `Makefile` | Workflow targets: `gen`, `baseline`, `run`, `check`, `chain`, `clean`, `clean-all` |
 | `AGENTS.md` | Full project context, architecture patterns, known bugs |
 | `docs/kb/query_rewrite_methods.md` | Knowledge base: 5 rewrite strategies with TPC-C from→to examples |
-| `docs/queries/` | Full SQL comparison across all drivers for all 5 transactions |
 | `tpcc/drivers/mysqldriver.py` | Baseline — one query at a time, per TPC-C spec |
 | `tpcc/drivers/optimizedmysqldriver.py` | Generated optimized reference driver |
 | `tpcc/scripts/correctness_check.py` | Record-and-replay correctness verification |
+| `tpcc/scripts/record_run.py` | TPC-C benchmark wrapper with telemetry recording |
+| `tpcc/scripts/cleanup_db.sh` | Drop all TPC-C databases |
 | `tpcc/runtime/executor.py` | TPC-C workload generator |
 | `tpcc/constants.py` | All TPC-C constants |
 | `tpcc/tpcc.py` | Main benchmark entry point |
@@ -48,11 +50,12 @@ flowchart TD
 
 | Target | Description |
 |--------|-------------|
-| `make gen` | Generate optimized TPC-C driver (hardcoded: `gemini-3.5-flash`) |
-| `make run` | Benchmark the generated optimizedmysql driver |
-| `make check` | Run correctness checker on `optimizedmysqldriver.py` |
-| `make gen-run` | Generate + benchmark in one step |
-| `make clean` | Drop only `tpcc-candidates` database |
+| `make gen` | Generate optimized driver (`gemini-3.5-flash-lite`) |
+| `make baseline` | Run baseline driver (1 warehouse, 60s, no telemetry) |
+| `make run` | Run optimized driver with telemetry recording |
+| `make check` | Run correctness checker on generated driver |
+| `make chain` | Full pipeline: gen → check → run → clean (continues on failure) |
+| `make clean` | Drop `tpcc-candidates` database |
 | `make clean-all` | Drop all TPC-C databases |
 
 ## CLI Reference
@@ -60,7 +63,6 @@ flowchart TD
 ### Engine (`python -m engine.main`)
 
 ```bash
-# Generate with all required args
 uv run python -m engine.main tpcc/drivers/mysqldriver.py \
     --runner tpcc/tpcc.py \
     --with tpcc/drivers/abstractdriver.py \
@@ -68,32 +70,32 @@ uv run python -m engine.main tpcc/drivers/mysqldriver.py \
     --output-dir tpcc/drivers
 
 # Flags
---model gemini-3.5-flash      # default, Gemini model
---runner <path>                # entry point file (required)
---with <path>                  # support file (repeatable)
---output-dir <dir>             # output directory
---kb <path>                    # knowledge base path
---llm-delay <seconds>          # delay between LLM calls (default: 5)
---dry-run                      # print prompts without calling LLM
+--model gemini-2.5-flash       # default Gemini model
+--runner, -r <path>             # entry point file (required)
+--with, -w <path>               # support file (repeatable)
+--output-dir <dir>              # output directory
+--kb <path>                     # knowledge base path
+--llm-delay <seconds>           # delay between LLM calls (default: 5)
+--dry-run                       # print prompts without calling LLM
 ```
 
 ### Checker (`python -m checker`)
 
-LLM-based correctness checker with a static syntax guardrail. Predicts whether
-generated code will fail at runtime and categorizes the failure.
+LLM-based correctness checker with a static syntax guardrail and structured JSON output. Predicts whether generated code will fail at runtime.
 
 ```bash
 uv run python -m checker tpcc/drivers/optimizedmysqldriver.py
-uv run python -m checker <file> --model gemini-3.5-flash
+uv run python -m checker <file> --model gemini-3.5-flash-lite
 uv run python -m checker                      # auto-detect latest driver
 uv run python -m checker <file> --json        # machine-readable output
 
 # Flags
---model gemini-3.5-flash       # default, Gemini model
---json, -j                     # JSON output
+--model gemini-2.5-flash        # default Gemini model
+--json, -j                      # JSON output
 ```
 
 **Failure categories:**
+
 | Category | Description |
 |----------|-------------|
 | `not_executable` | Syntax errors, incomplete code, bad imports |
@@ -105,38 +107,42 @@ uv run python -m checker <file> --json        # machine-readable output
 ### TPC-C Benchmark (`python tpcc/tpcc.py`)
 
 ```bash
-# Run the baseline driver
+# Baseline driver (no telemetry)
 uv run python tpcc/tpcc.py mysql \
     --config=tpcc/configs/mysql.config \
     --warehouses=4 --duration=10 --clients=1
 
-# Run the optimized driver
-uv run python tpcc/tpcc.py optimizedmysql \
+# Optimized driver (via telemetry wrapper)
+uv run python tpcc/scripts/record_run.py optimizedmysql \
     --config=tpcc/configs/mysql.config \
-    --warehouses=4 --duration=10 --clients=1
+    --warehouses=4 --duration=60 --clients=1
 
 # Flags
 --config <path>                # driver config file
 --warehouses N                 # number of warehouses
 --duration D                   # benchmark duration in seconds
---clients N                    # number of clients (use 1 to avoid race condition)
+--clients N                    # number of clients
 --reset                        # reset database before running
 --no-load                      # skip data loading
 --no-execute                   # skip workload execution
 --scalefactor SF               # scale factor
+--ddl <path>                   # path to DDL SQL file
+--stop-on-error                # stop on first transaction error
+--print-config                 # print default config and exit
 --debug                        # enable debug logging
 ```
 
 ## Pipeline Architecture
 
-The engine (`engine/pipeline.py`) uses a unified pipeline for all codebases:
+The engine (`engine/pipeline.py`) runs 5 steps:
 
-1. **Scanner** (`scanner.py`) — walks the codebase, detects DB interactions via regex patterns, and produces a `CodebaseProfile` (db_type, db_api, tags like `tpcc`)
-2. **Intent Extractor** (`extractor.py`) — **LLM call #1**: analyzes the scanned code and returns a structured `IntentSpec` (transactions, queries, dataflow, round-trip counts)
-3. **Planner** (`planner.py`) — parses KB strategies from `docs/kb/query_rewrite_methods.md`, maps extracted intent → rewrite plan
-4. **Generator** (`generator.py`) — **LLM call #2**: builds a dynamic prompt from scan + extracted intent + plan + KB, generates optimized code
-5. **Verifier** (`verifier.py`) — compile check + extensible validators
-6. **Checker** (`checker/ast_checker.py`) — **LLM call #3** (optional): statically checks syntax, then sends code to an LLM to predict runtime failures across 5 categories
+1. **Scanner** — walks codebase, builds project tree, reads source files
+2. **Intent Extractor** — **LLM call #1**: returns structured `IntentSpec` (transactions, queries, dataflow)
+3. **Planner** — parses KB strategies, maps intent → rewrite plan
+4. **Code Generator** — **LLM call #2**: builds prompt, generates optimized code
+5. **Verifier** — compile check + extensible validators
+
+The **Checker** is a separate tool (`checker/ast_checker.py`) that runs post-generation. It statically checks syntax (guardrail), then sends code to an LLM with a structured schema to predict runtime failures across 5 categories.
 
 ## Rewrite Strategies
 
@@ -149,6 +155,20 @@ Five strategies from `docs/kb/query_rewrite_methods.md`:
 | JOIN_ORDER_HINTS | STRAIGHT_JOIN to force known-efficient join order |
 | SEPARATING_QUERIES | Split monolithic queries into independent steps |
 | CONCURRENCY | Set-based IN clauses replace per-item loops |
+
+## Telemetry
+
+SQLite-backed (`telemetry/telemetry.db`) with auto-linking via `# ADCO_RUN_ID` embedded in generated files.
+
+**Tables:**
+
+| Table | Granularity | Key columns |
+|-------|-------------|-------------|
+| `engine_runs` | One row per run | `model`, `run_status`, `total_duration_ms`, `total_input_tokens`, `total_output_tokens` |
+| `engine_steps` | One row per step (FK→engine_runs) | `step`, `step_duration_ms`, `llm_input_tokens`, `llm_output_tokens` |
+| `checker_runs` | One row per run (linked via `engine_run_id`) | `checker_status`, `failure_category`, `reason`, `llm_input_tokens`, `llm_output_tokens` |
+| `tpcc_runs` | One row per run (linked via `engine_run_id`) | `driver`, `benchmark_duration_s`, `total_executed`, `total_tps`, `txn_status`, `missing_txns` |
+| `tpcc_txns` | One row per txn type (FK→tpcc_runs) | `txn_type`, `status`, `executed`, `time_us` |
 
 ## Config File Format
 
@@ -167,8 +187,9 @@ Generated drivers use `[candidates]` (database `tpcc-candidates`).
 
 To add a new TPC-C driver manually:
 1. Create `tpcc/drivers/<name>driver.py` with a class `<Name>Driver(AbstractDriver)`
-2. Add a `[<name>]` section to `tpcc/configs/mysql.config`
+2. The runner derives the class name via `name.title() + "Driver"` (e.g. `optimizedmysql` → `OptimizedmysqlDriver`)
+3. Add a `[<name>]` section to `tpcc/configs/mysql.config`
 
 ## Credits
 
-Based on the original [`apavlo/py-tpcc`](https://github.com/apavlo/py-tpcc) by Andy Pavlo and contributors. Extended for LLM-generated query optimization benchmarking and generic application-database co-optimization.
+Based on the original [`apavlo/py-tpcc`](https://github.com/apavlo/py-tpcc) by Andy Pavlo and contributors. Extended for LLM-generated query optimization benchmarking and application-database co-optimization.

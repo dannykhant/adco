@@ -2,7 +2,7 @@
 SHELL := /bin/bash
 
 # Define shortcuts/tasks that do not generate output files
-.PHONY: gen run genrun gen-generic test-unit test-tpcc clean clean-all
+.PHONY: gen run check gen-run chain clean clean-all
 
 MODEL ?= gemini-2.5-flash
 OUTPUT := tpcc/drivers
@@ -17,11 +17,11 @@ gen:
 		--runner tpcc/tpcc.py \
 		--with tpcc/drivers/abstractdriver.py --with tpcc/constants.py \
 		--output-dir=tpcc/drivers \
-		--model=gemini-3.6-flash
+		--model=gemini-3.5-flash-lite
 
 run:
 	@echo "Running latest generated driver..."
-	uv run python tpcc/tpcc.py optimizedmysql \
+	uv run python tpcc/scripts/record_run.py optimizedmysql \
 		--config=tpcc/configs/mysql.config \
 		--clients=1 \
 		--warehouses=1 \
@@ -38,11 +38,7 @@ baseline:
 check:
 	@echo "Running correctness checker on a specific file..."
 	uv run python -m checker tpcc/drivers/optimizedmysqldriver.py \
-		--model gemini-3.6-flash
-
-gen-run:
-	$(MAKE) gen && \
-	$(MAKE) run
+		--model gemini-3.5-flash-lite
 
 clean:
 	@echo "Dropping candidates database..."
@@ -53,3 +49,11 @@ clean-all:
 	@echo "Dropping all TPC-C databases..."
 	@./tpcc/scripts/cleanup_db.sh
 	@echo "Dropping all TPC-C databases completed."
+
+chain:
+	@echo "=== ADCo Pipeline ==="
+	@$(MAKE) gen || true
+	@$(MAKE) check || true
+	@$(MAKE) run || true
+	@$(MAKE) clean || true
+	@echo "=== Pipeline complete ==="
