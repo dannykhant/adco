@@ -197,7 +197,7 @@ def check_code(code: str, model_name: str = "gemini-2.5-flash", telemetry_run=No
             guardrail_failed=True,
         )
         if telemetry_run:
-            telemetry_run.record_check(status="FAIL", reason=result.reason)
+            telemetry_run.record_check(status="FAIL", reason=result.reason, failure_category=result.category)
         return result
 
     t0 = time.time()
@@ -210,7 +210,7 @@ def check_code(code: str, model_name: str = "gemini-2.5-flash", telemetry_run=No
             guardrail_failed=True,
         )
         if telemetry_run:
-            telemetry_run.record_check(status="FAIL", reason=result.reason)
+            telemetry_run.record_check(status="FAIL", reason=result.reason, failure_category=result.category)
         return result
 
     llm_result, usage = _call_llm(code, model_name)
@@ -225,6 +225,7 @@ def check_code(code: str, model_name: str = "gemini-2.5-flash", telemetry_run=No
         telemetry_run.record_check(
             status=status,
             reason=result.reason,
+            failure_category=result.category,
             usage_metadata=usage,
         )
 
