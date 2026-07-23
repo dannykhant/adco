@@ -142,6 +142,9 @@ def main() -> None:
     duration_ms = int((time.time() - t0) * 1000)
 
     parsed = _parse_output(result.stdout)
+    failed_txns = [t["txn_type"] for t in parsed["txns"] if t["status"] == "fail"]
+    txn_status = "complete" if not failed_txns else "missing"
+    missing_txns = ",".join(failed_txns)
 
     with TelemetryRun(run_type="tpcc", engine_run_id=run_id) as run:
         run.record_tpcc(
@@ -152,6 +155,8 @@ def main() -> None:
             total_executed=parsed["total_executed"],
             total_time_us=parsed["total_time_us"],
             total_tps=parsed["total_tps"],
+            txn_status=txn_status,
+            missing_txns=missing_txns,
             txns=parsed["txns"],
         )
 

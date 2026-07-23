@@ -106,20 +106,7 @@ Choose the SINGLE most applicable category if the code will fail:
    - Intermediate results are fetched individually instead of `fetchall()`.
 
 ## Output format
-Respond with ONLY a JSON object, no other text:
-```json
-{
-  "failure": false
-}
-```
-OR
-```json
-{
-  "failure": true,
-  "category": "not_executable | name_error | db_error | reward_hacking | slow",
-  "reason": "specific explanation of what is wrong"
-}
-```
+Respond with a JSON object matching this schema exactly. No other text.
 
 ## Code to analyze
 ```python
@@ -163,26 +150,44 @@ def _check_syntax(code: str) -> tuple[bool, str]:
 
 
 # ---------------------------------------------------------------------------
-# LLM call — returns (result_dict, input_tokens, output_tokens, usage_metadata)
+# LLM call — returns (result_dict, usage_metadata)
 # ---------------------------------------------------------------------------
-def _call_llm(code: str, model_name: str) -> tuple[dict, int, int, object]:
+CHECKER_SCHEMA = {
+    "type": "OBJECT",
+    "properties": {
+        "failure": {"type": "BOOLEAN"},
+        "category": {
+            "type": "STRING",
+            "enum": ["not_executable", "name_error", "db_error", "reward_hacking", "slow", "none"],
+        },
+        "reason": {"type": "STRING"},
+    },
+    "required": ["failure", "category", "reason"],
+}
+
+
+def _call_llm(code: str, model_name: str) -> tuple[dict, object]:
     import time
     from google import genai
+    from google.genai.types import GenerateContentConfig
 
     client = genai.Client()
     prompt = CHECKER_PROMPT.replace("__CODE__", code[:32000])
 
     t0 = time.time()
-    response = client.models.generate_content(model=model_name, contents=prompt)
+    response = client.models.generate_content(
+        model=model_name,
+        contents=prompt,
+        config=GenerateContentConfig(
+            response_mime_type="application/json",
+            response_schema=CHECKER_SCHEMA,
+        ),
+    )
     llm_ms = int((time.time() - t0) * 1000)
 
     usage = getattr(response, "usage_metadata", None)
-
-    text = response.text.strip()
-    json_match = re.search(r"\{[\s\S]*\}", text)
-    if json_match:
-        return json.loads(json_match.group(0)), usage
-    return {"failure": True, "category": "not_executable", "reason": f"LLM returned unparseable response: {text[:200]}"}, usage
+    result = json.loads(response.text.strip())
+    return result, usage
 
 
 # ---------------------------------------------------------------------------
@@ -214,10 +219,13 @@ def check_code(code: str, model_name: str = "gemini-2.5-flash", telemetry_run=No
         return result
 
     llm_result, usage = _call_llm(code, model_name)
+    cat = llm_result.get("category", "")
+    if cat == "none":
+        cat = ""
     result = CheckResult(
         failure=llm_result.get("failure", False),
         reason=llm_result.get("reason", ""),
-        category=llm_result.get("category", ""),
+        category=cat,
     )
 
     if telemetry_run:

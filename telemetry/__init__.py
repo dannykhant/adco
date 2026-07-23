@@ -70,6 +70,7 @@ def init_db() -> None:
             model           TEXT,
             run_status      TEXT CHECK(run_status IN ('running', 'success', 'fail')),
             checker_status  TEXT,
+            failure_category TEXT,
             reason          TEXT,
             total_duration_ms INTEGER DEFAULT 0,
             llm_input_tokens  INTEGER DEFAULT 0,
@@ -87,7 +88,9 @@ def init_db() -> None:
             exit_code       INTEGER,
             total_executed  INTEGER DEFAULT 0,
             total_time_us   REAL DEFAULT 0,
-            total_tps       REAL DEFAULT 0
+            total_tps       REAL DEFAULT 0,
+            txn_status      TEXT DEFAULT 'missing',
+            missing_txns    TEXT DEFAULT ''
         );
 
         CREATE TABLE IF NOT EXISTS tpcc_txns (
@@ -99,6 +102,24 @@ def init_db() -> None:
             time_us         REAL DEFAULT 0
         );
     """)
+    # Migration: add columns if missing (for existing DBs)
+    for col, col_type in [
+        ("failure_category", "TEXT"),
+        ("txn_status", "TEXT DEFAULT 'missing'"),
+        ("missing_txns", "TEXT DEFAULT ''"),
+    ]:
+        try:
+            conn.execute(f"ALTER TABLE checker_runs ADD COLUMN {col} {col_type}")
+        except sqlite3.OperationalError:
+            pass
+    for col, col_type in [
+        ("txn_status", "TEXT DEFAULT 'missing'"),
+        ("missing_txns", "TEXT DEFAULT ''"),
+    ]:
+        try:
+            conn.execute(f"ALTER TABLE tpcc_runs ADD COLUMN {col} {col_type}")
+        except sqlite3.OperationalError:
+            pass
     conn.commit()
     conn.close()
 
@@ -198,16 +219,17 @@ class TelemetryRun:
         self,
         status: str = "",
         reason: str = "",
+        failure_category: str = "",
         usage_metadata=None,
     ) -> None:
         self._ensure_run()
         input_tokens, output_tokens = _extract_tokens(usage_metadata)
         conn = self._get_conn()
         conn.execute(
-            """UPDATE checker_runs SET checker_status = ?, reason = ?,
+            """UPDATE checker_runs SET checker_status = ?, failure_category = ?, reason = ?,
                llm_input_tokens = ?, llm_output_tokens = ?
                WHERE id = ?""",
-            (status, reason, input_tokens, output_tokens, self.run_id),
+            (status, failure_category, reason, input_tokens, output_tokens, self.run_id),
         )
         conn.commit()
 
@@ -222,6 +244,8 @@ class TelemetryRun:
         total_executed: int = 0,
         total_time_us: float = 0,
         total_tps: float = 0,
+        txn_status: str = "missing",
+        missing_txns: str = "",
         txns: list[dict] | None = None,
     ) -> None:
         self._ensure_run()
@@ -230,8 +254,9 @@ class TelemetryRun:
         conn.execute(
             """INSERT OR REPLACE INTO tpcc_runs
                (id, engine_run_id, timestamp, driver, benchmark_duration_s, run_status,
-                duration_ms, exit_code, total_executed, total_time_us, total_tps)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                duration_ms, exit_code, total_executed, total_time_us, total_tps,
+                txn_status, missing_txns)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 self.run_id,
                 self.engine_run_id or None,
@@ -244,6 +269,8 @@ class TelemetryRun:
                 total_executed,
                 total_time_us,
                 total_tps,
+                txn_status,
+                missing_txns,
             ),
         )
         for txn in (txns or []):
