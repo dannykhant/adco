@@ -13,53 +13,26 @@ SUPPORT := tpcc/drivers/abstractdriver.py tpcc/constants.py tpcc/tpcc.py
 
 gen:
 	@echo "Generating optimized driver..."
-	uv run python -m engine.main $(TARGET) \
-		$(addprefix --with ,$(SUPPORT)) \
-		--output-dir=$(OUTPUT) --model=$(MODEL)
+	uv run python -m engine.main tpcc/drivers/mysqldriver.py \
+		--runner tpcc/tpcc.py \
+		--with tpcc/drivers/abstractdriver.py --with tpcc/constants.py \
+		--output-dir=tpcc/drivers \
+		--model=gemini-3.5-flash
 
 run:
-	$(eval DRIVER := $(filter-out $@,$(MAKECMDGOALS)))
-	@if [ -z "$(DRIVER)" ]; then \
-		echo "Usage: make run <driver_name>"; \
-		echo "Example: make run baselinemysql"; \
-		exit 1; \
-	fi
-	uv run python tpcc/tpcc.py $(DRIVER) \
+	@echo "Running latest generated driver..."
+	uv run python tpcc/tpcc.py optimizedmysql \
 		--config=tpcc/configs/mysql.config \
 		--clients=1
 
+check:
+	@echo "Running correctness checker on a specific file..."
+	uv run python -m checker tpcc/drivers/optimizedmysqldriver.py \
+		--model gemini-3.5-flash
+
 gen-run:
-	$(MAKE) gen MODEL=$(MODEL) && \
-	echo "Running latest generated driver..." && \
-	$(MAKE) run gemini-optimized
-
-# Generic mode: optimize any file
-gen-generic:
-	@echo "Usage: make gen-generic TARGET=<file> [SUPPORT='file1 file2']"
-	@echo "Example: make gen-generic TARGET=./myproject/db.py SUPPORT='./myproject/models.py ./myproject/config.py'"
-	@if [ -z "$(TARGET)" ]; then \
-		echo "ERROR: TARGET is required"; \
-		exit 1; \
-	fi
-	uv run python -m engine.main $(TARGET) $(addprefix --with ,$(SUPPORT)) --model=$(MODEL)
-
-# Prevent Make from erroring on extra args
-%:
-	@true
-
-test-tpcc:
-	@echo "Running integration tests..."
-	uv run python tpcc/scripts/correctness_check.py \
-		--config=configs/mysql.config \
-		--config2=configs/mysql.config \
-		--config3=configs/mysql.config \
-		--warehouses=1 --transactions=500
-	@echo "Tests completed."
-
-test-unit:
-	@echo "Running AST-based checker on latest generated driver..."
-	uv run python tests/ast_checker.py --auto --verbose
-	@echo "AST-based test completed."
+	$(MAKE) gen && \
+	$(MAKE) run
 
 clean:
 	@echo "Dropping candidates database..."

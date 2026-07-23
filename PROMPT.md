@@ -36,11 +36,10 @@ Key constraints:
 - Each method ends with self.conn.commit()
 - Exact param keys only (params["w_id"] → w_id, never w_w_id)
 - No window functions (MySQL 5.7)
-- Dynamic IN clauses use __IN_CLAUSE__ marker approach
+- Dynamic IN clauses use `__IN_CLAUSE__` marker approach; row-value IN clauses (e.g. `(S_I_ID, S_W_ID) IN ...`) must be wrapped as `IN ((%s,%s),(%s,%s))`, not `IN (%s,%s),(%s,%s)`
 - Batch INSERT/UPDATE/DELETE writes use `cursor.executemany(full_template, params_list)`; never pass a raw comma-separated tuple string like `(%s,%s),(%s,%s)` as the SQL
 - TXN_QUERIES dict must be preserved with top-level transaction keys
 
-Run tests: uv run python tests/ast_checker.py --auto
 Generate: make gen
 Benchmark: make run <drivername>
 ```
