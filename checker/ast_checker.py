@@ -59,21 +59,20 @@ Choose the SINGLE most applicable category if the code will fail:
    - **Placeholder mismatch**: `cursor.execute(sql, params)` has fewer/more `%s` (or `?`)
      placeholders than params elements. Will raise ProgrammingError.
    - **Python % formatting error**: SQL template strings that use Python `%` formatting
-     (e.g. `"S_DIST_%02d"`, `"SELECT ... WHERE id IN (%s)"`) must be called with matching
-     arguments via the `%` operator. If a template has `%s` or `%d` but is used with
-     `cursor.execute(template, params)` without first formatting, or if `template % args`
+     (e.g. `"S_DIST_%02d"`) must be called with matching arguments via the `%` operator,
+     e.g. `template % (d_id,)`. If a template has format specifiers but is used with
+     `cursor.execute(template, params)` without being formatted first, or if the `%` call
      has mismatched argument count, it will raise "not enough arguments for format string".
-     Trace ALL `%` operations on SQL strings — if a string contains `%s`, `%d`, `%02d`,
-     `%%s`, or any `%`-based format specifier, verify that when it is eventually passed
-     to `cursor.execute()`, every `%` token is either:
-       (a) paired with a matching argument in a `%` format operation, OR
-       (b) properly escaped as `%%` if intended as a literal `cursor.execute` placeholder.
-     WARNING: the `getStockInfo` pattern `"SELECT ... S_DIST_%02d FROM STOCK WHERE S_I_ID = %%s AND S_W_ID = %%s"`
-     is especially dangerous — the `%02d` consumes one arg, and the `%%s` become `%s` for
-     cursor.execute. Count the `%` format args carefully against the values provided in
-     the call like `q["getStockInfo"] % (d_id)`.
-   - **Unreplaced marker**: The SQL string contains unreplaced template markers like
-     `__IN_CLAUSE__`, `__MARKER__`, or similar sentinels. Will cause SQL syntax error.
+     NOTE: patterns like `q["key"] % d_id` are INTENTIONAL — the format specifier in
+     the template consumes exactly one argument. Only flag if the argument count to
+     `%` does not match the number of format specifiers in the template.
+   - **Unreplaced marker**: A template marker like `__IN_CLAUSE__`, `__MARKER__`,
+     or similar sentinels appears in a SQL string that is passed DIRECTLY to
+     `cursor.execute()` without prior replacement. IMPORTANT: markers stored in
+     a `TXN_QUERIES` dict or similar template registry are INTENTIONAL — they are
+     meant to be replaced at runtime via `.replace()` or `%` formatting. Only flag
+     a marker if you can trace the code path and confirm the string reaches
+     `cursor.execute()` WITHOUT the marker being replaced first.
    - **DB version incompatibility**: The SQL uses features unavailable in the target
      database version. For MySQL 5.7: window functions (ROW_NUMBER, RANK, OVER,
      PARTITION BY), CTEs (WITH), LATERAL, JSON_TABLE. Will raise OperationalError
