@@ -17,18 +17,28 @@ gen:
 		--runner tpcc/tpcc.py \
 		--with tpcc/drivers/abstractdriver.py --with tpcc/constants.py \
 		--output-dir=tpcc/drivers \
-		--model=gemini-3.5-flash
+		--model=gemini-3.6-flash
 
 run:
 	@echo "Running latest generated driver..."
 	uv run python tpcc/tpcc.py optimizedmysql \
 		--config=tpcc/configs/mysql.config \
-		--clients=1
+		--clients=1 \
+		--warehouses=1 \
+		--duration=60 \
+
+baseline:
+	@echo "Running baseline driver..."
+	uv run python tpcc/tpcc.py mysql \
+		--config=tpcc/configs/mysql.config \
+		--clients=1 \
+		--warehouses=1 \
+		--duration=60 \
 
 check:
 	@echo "Running correctness checker on a specific file..."
 	uv run python -m checker tpcc/drivers/optimizedmysqldriver.py \
-		--model gemini-3.5-flash
+		--model gemini-3.6-flash
 
 gen-run:
 	$(MAKE) gen && \
