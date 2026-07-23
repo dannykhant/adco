@@ -99,6 +99,11 @@ def build_optimization_prompt(
         "- Use helper methods (e.g. `_batch_items`, `_batch_stock_info`, `_batch_update_stock`, `_batch_insert_order_lines`, `_batch_delete_new_orders`, `_batch_update_orders`, `_batch_update_order_lines`, `_batch_update_customers`) for loop batching. Put the batched SQL templates in `TXN_QUERIES`, not inline.",
         "- End every transaction method with `self.conn.commit()` before returning.",
         "- Do not change transaction semantics: return the same shape/value as the baseline, preserve all conditional branches, and keep assertions that guard correctness.",
+        "- **JOIN SAFETY**. When merging sequential SELECTs into a JOIN with aggregation:",
+        "  - Use `COALESCE(SUM(...), 0)` to avoid NULL from unmatched rows.",
+        "  - Prefer `LEFT JOIN` + `COALESCE` over implicit joins when some joined tables may have no matching rows.",
+        "  - If the baseline used `LIMIT 1` to skip missing data, the batched version must filter out or handle missing results the same way.",
+        "  - Never pass NULL aggregate results through assertions that check `> 0` or `is not None` — the original code was guarded against this, the optimized code must be too.",
         f"- Target database version: {intent.db_version or 'unknown'}. "
         "Do NOT use features unsupported by this version (e.g., MySQL 5.7 does not support window "
         "functions like `ROW_NUMBER()`, `RANK()`, `OVER`, `PARTITION BY`, `LATERAL`, or CTEs). "
@@ -131,6 +136,8 @@ def build_optimization_prompt(
         "5. For TPC-C NEW_ORDER, the batch stock SELECT returns both `S_I_ID` and `S_W_ID`, and the resulting dictionary is keyed by `(S_I_ID, S_W_ID)` (not by `S_DIST_XX`).",
         "6. The file ends with every transaction method calling `self.conn.commit()`.",
         "7. The file is valid Python (no syntax errors, balanced parentheses/brackets).",
+        "8. All JOIN queries use COALESCE on aggregate columns to avoid NULL from unmatched rows.",
+        "9. Batched queries produce the same set of rows (no missing, no extra) as the baseline's sequential equivalent.",
         "",
         "## OPTIMIZATION RECIPE",
         "1. Merge sequential SELECTs into JOINs when they share the same warehouse/district/customer keys.",
