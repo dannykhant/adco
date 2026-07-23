@@ -75,6 +75,29 @@ def init_db() -> None:
             llm_input_tokens  INTEGER DEFAULT 0,
             llm_output_tokens INTEGER DEFAULT 0
         );
+
+        CREATE TABLE IF NOT EXISTS tpcc_runs (
+            id              TEXT PRIMARY KEY,
+            engine_run_id   TEXT,
+            timestamp       TEXT NOT NULL,
+            driver          TEXT,
+            benchmark_duration_s INTEGER,
+            run_status      TEXT CHECK(run_status IN ('running', 'success', 'fail')),
+            duration_ms     INTEGER DEFAULT 0,
+            exit_code       INTEGER,
+            total_executed  INTEGER DEFAULT 0,
+            total_time_us   REAL DEFAULT 0,
+            total_tps       REAL DEFAULT 0
+        );
+
+        CREATE TABLE IF NOT EXISTS tpcc_txns (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            tpcc_run_id     TEXT NOT NULL REFERENCES tpcc_runs(id),
+            txn_type        TEXT NOT NULL,
+            status          TEXT CHECK(status IN ('success', 'fail')),
+            executed        INTEGER DEFAULT 0,
+            time_us         REAL DEFAULT 0
+        );
     """)
     conn.commit()
     conn.close()
@@ -113,6 +136,7 @@ class TelemetryRun:
                     "INSERT INTO checker_runs (id, engine_run_id, timestamp, model, run_status) VALUES (?, ?, ?, ?, ?)",
                     (self.run_id, self.engine_run_id or None, self._now_iso(), self.model_name, "running"),
                 )
+            # tpcc: no separate run row — record_tpcc handles the insert
             conn.commit()
             self._run_created = True
 
@@ -142,6 +166,7 @@ class TelemetryRun:
                 "UPDATE checker_runs SET run_status = ?, total_duration_ms = ? WHERE id = ?",
                 (status, total_ms, self.run_id),
             )
+        # tpcc: handled entirely by record_tpcc
 
         conn.commit()
         conn.close()
@@ -186,6 +211,49 @@ class TelemetryRun:
         )
         conn.commit()
 
+    # ── TPC-C API ──
+
+    def record_tpcc(
+        self,
+        driver: str = "",
+        benchmark_duration_s: int = 0,
+        duration_ms: int = 0,
+        exit_code: int = 0,
+        total_executed: int = 0,
+        total_time_us: float = 0,
+        total_tps: float = 0,
+        txns: list[dict] | None = None,
+    ) -> None:
+        self._ensure_run()
+        run_status = "success" if exit_code == 0 else "fail"
+        conn = self._get_conn()
+        conn.execute(
+            """INSERT OR REPLACE INTO tpcc_runs
+               (id, engine_run_id, timestamp, driver, benchmark_duration_s, run_status,
+                duration_ms, exit_code, total_executed, total_time_us, total_tps)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                self.run_id,
+                self.engine_run_id or None,
+                self._now_iso(),
+                driver,
+                benchmark_duration_s,
+                run_status,
+                duration_ms,
+                exit_code,
+                total_executed,
+                total_time_us,
+                total_tps,
+            ),
+        )
+        for txn in (txns or []):
+            conn.execute(
+                """INSERT INTO tpcc_txns
+                   (tpcc_run_id, txn_type, status, executed, time_us)
+                   VALUES (?, ?, ?, ?, ?)""",
+                (self.run_id, txn["txn_type"], txn["status"], txn["executed"], txn["time_us"]),
+            )
+        conn.commit()
 
 # ── Helpers ──
 
